@@ -20,6 +20,7 @@ app/
     submit              登記交換申請
     board               看板資料（waiting 且還有剩餘件數的申請）
     branch/[code]       分行主頁的所有資料
+    branch/[code]/contact  分行聯絡方式（GET / PATCH）
     propose             送出配對提案
     confirm             確認／婉拒提案
     request/[id]        編輯（PATCH）／取消（DELETE）申請
@@ -41,9 +42,18 @@ lib/
 | `trust_type` | `disability` / `general` / `care`，只有同類型能配對 |
 | `requested_count` | 登記的總件數 |
 | `remaining_count` | 還沒配對掉的件數 |
-| `contact_info` | 聯絡方式（分機等），公開顯示在看板 |
-| `notification_email` | 通知信箱，填了才會收到通知信 |
 | `status` | `waiting` / `completed` / `cancelled` |
+
+**branch_contacts** —— 分行聯絡方式，一家分行一筆
+
+聯絡方式是分行的屬性，不是個別申請的。放在申請上的話，同一家分行登記三種信託
+類型就要填三次、改也要改三次，實際資料裡因此出現同分行「#168」與「168」並存。
+
+| 欄位 | 說明 |
+|---|---|
+| `branch_code` | 主鍵 |
+| `contact_info` | 聯絡方式（分機等），公開顯示在看板 |
+| `notification_email` | 通知信箱，不公開，填了才會收到通知信 |
 
 **match_proposals** —— A 分行對 B 分行送出的配對提案
 
@@ -77,7 +87,12 @@ RESEND_API_KEY=…                                # 沒設定就不寄通知信�
 NOTIFY_FROM=信託案件交換平台 <noreply@aris7.me>
 ```
 
-資料表會在第一次連線時自動建立，不用手動跑 migration。
+資料表會在第一次連線時自動建立，不用手動跑 migration。schema 變更用
+`lib/db.ts` 的 `SCHEMA_VERSION` 搭配 SQLite `user_version` 控管，migration 包在
+immediate 交易裡，多個行程同時啟動也只會執行一次。
+
+DB 連線是延遲開啟的：`next build` 會 import 每個 route module，若在模組載入時就
+連線，等於 build 一次就對正式資料庫跑一次 migration。
 
 ## 部署
 

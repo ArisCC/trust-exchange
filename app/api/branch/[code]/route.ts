@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, nowISO, placeholders, type ExchangeRequest, type MatchProposal } from '@/lib/db'
+import {
+  db,
+  getBranchContact,
+  nowISO,
+  placeholders,
+  type ExchangeRequest,
+  type MatchProposal,
+} from '@/lib/db'
 
 const EMPTY = {
   myRequests: [],
@@ -18,11 +25,14 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ code: stri
      WHERE branch_code = ? AND remaining_count = 0 AND status = 'waiting'`
   ).run(nowISO(), code)
 
+  const contact =
+    getBranchContact(code) ?? { branch_code: code, contact_info: null, notification_email: null }
+
   const myRequests = db
     .prepare('SELECT * FROM exchange_requests WHERE branch_code = ? ORDER BY created_at DESC')
     .all(code) as ExchangeRequest[]
 
-  if (myRequests.length === 0) return NextResponse.json(EMPTY)
+  if (myRequests.length === 0) return NextResponse.json({ ...EMPTY, contact })
 
   const allIds = myRequests.map(r => r.id)
   // 只用未取消的申請 ID 查詢配對資料，避免已取消的申請帶出舊配對
@@ -40,7 +50,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ code: stri
     .all(...allIds, ...allIds) as MatchProposal[]
 
   if (activeIds.length === 0) {
-    return NextResponse.json({ ...EMPTY, myRequests, pastHistory })
+    return NextResponse.json({ ...EMPTY, contact, myRequests, pastHistory })
   }
 
   const ph = placeholders(activeIds.length)
@@ -76,6 +86,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ code: stri
     .all(...activeIds, ...activeIds) as MatchProposal[]
 
   return NextResponse.json({
+    contact,
     myRequests,
     incomingProposals,
     outgoingProposals,

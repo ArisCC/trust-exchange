@@ -1,4 +1,5 @@
 import { Resend } from 'resend'
+import { getBranchContact } from './db'
 import { TRUST_TYPE_LABELS, type ExchangeRequest, type MatchProposal } from './types'
 
 const API_KEY = process.env.RESEND_API_KEY
@@ -58,18 +59,19 @@ export function notifyProposal(
   toRequest: ExchangeRequest,
   fromRequest: ExchangeRequest
 ) {
+  const fromContact = getBranchContact(proposal.from_branch_code)?.contact_info
   const subject = `【配對提案】${proposal.from_branch_name} 想與您交換 ${proposal.proposed_count} 件`
   const html = shell(
     '您收到一筆新的配對提案',
     [
       `<b>${proposal.from_branch_name}</b>（${proposal.from_branch_code}）想與您交換 <b>${proposal.proposed_count} 件</b>。`,
       `信託類型：${typeLabel(toRequest)}`,
-      fromRequest.contact_info ? `對方聯絡方式：${fromRequest.contact_info}` : '',
+      fromContact ? `對方聯絡方式：${fromContact}` : '',
       '請進入平台確認或婉拒這筆提案。',
     ].filter(Boolean),
     proposal.to_branch_code
   )
-  void send(toRequest.notification_email, subject, html)
+  void send(getBranchContact(proposal.to_branch_code)?.notification_email ?? null, subject, html)
 }
 
 /** 提案被接受 → 通知提案方（被提案方是本人操作，不用寄） */
@@ -78,6 +80,7 @@ export function notifyConfirmed(
   fromRequest: ExchangeRequest,
   toRequest: ExchangeRequest
 ) {
+  const toContact = getBranchContact(proposal.to_branch_code)?.contact_info
   const subject = `【配對成功】${proposal.to_branch_name} 已接受您的 ${proposal.proposed_count} 件交換`
   const html = shell(
     '配對成功',
@@ -85,11 +88,11 @@ export function notifyConfirmed(
       `<b>${proposal.to_branch_name}</b>（${proposal.to_branch_code}）已接受您的配對提案。`,
       `交換件數：<b>${proposal.proposed_count} 件</b>`,
       `信託類型：${typeLabel(fromRequest)}`,
-      toRequest.contact_info ? `對方聯絡方式：${toRequest.contact_info}` : '',
+      toContact ? `對方聯絡方式：${toContact}` : '',
     ].filter(Boolean),
     proposal.from_branch_code
   )
-  void send(fromRequest.notification_email, subject, html)
+  void send(getBranchContact(proposal.from_branch_code)?.notification_email ?? null, subject, html)
 }
 
 /** 提案被婉拒 → 通知提案方 */
@@ -103,5 +106,5 @@ export function notifyRejected(proposal: MatchProposal, fromRequest: ExchangeReq
     ],
     proposal.from_branch_code
   )
-  void send(fromRequest.notification_email, subject, html)
+  void send(getBranchContact(proposal.from_branch_code)?.notification_email ?? null, subject, html)
 }

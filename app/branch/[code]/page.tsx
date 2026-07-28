@@ -4,10 +4,11 @@ import { use, useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { findBranch } from '@/lib/branches'
-import type { ExchangeRequest, MatchProposal, TrustType } from '@/lib/types'
+import type { BranchContact, ExchangeRequest, MatchProposal, TrustType } from '@/lib/types'
 import { TRUST_TYPE_LABELS } from '@/lib/types'
 
 type DashboardData = {
+  contact: BranchContact
   myRequests: ExchangeRequest[]
   incomingProposals: MatchProposal[]
   outgoingProposals: MatchProposal[]
@@ -22,8 +23,6 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
   const [data, setData] = useState<DashboardData | null>(null)
   const [trustType, setTrustType] = useState<TrustType>('disability')
   const [caseCount, setCaseCount] = useState('')
-  const [contactInfo, setContactInfo] = useState('')
-  const [notifyEmail, setNotifyEmail] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [processingId, setProcessingId] = useState<string | null>(null)
@@ -58,15 +57,24 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
         branch_name: branch!.name,
         trust_type: trustType,
         case_count: parseInt(caseCount),
-        contact_info: contactInfo || null,
-        notification_email: notifyEmail || null,
       }),
     })
     setCaseCount('')
-    setContactInfo('')
-    setNotifyEmail('')
     setSubmitting(false)
     load()
+  }
+
+  async function handleSaveContact(contactInfo: string, email: string) {
+    const res = await fetch(`/api/branch/${code}/contact`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contact_info: contactInfo || null, notification_email: email || null }),
+    })
+    const d = await res.json()
+    if (!res.ok) { showToast(d.error ?? '儲存失敗'); return false }
+    showToast('已更新分行聯絡方式')
+    load()
+    return true
   }
 
   async function handleProposal(proposalId: string, action: 'confirm' | 'reject') {
@@ -84,15 +92,11 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
     load()
   }
 
-  async function handleEdit(requestId: string, newCount: number, newContact: string, newEmail: string) {
+  async function handleEdit(requestId: string, newCount: number) {
     const res = await fetch(`/api/request/${requestId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        case_count: newCount,
-        contact_info: newContact || null,
-        notification_email: newEmail || null,
-      }),
+      body: JSON.stringify({ case_count: newCount }),
     })
     const d = await res.json()
     if (!res.ok) showToast(d.error ?? '編輯失敗')
@@ -217,6 +221,9 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
           </div>
         )}
 
+        {/* 分行聯絡方式：整個分行共用一份，不隨信託類型重複填 */}
+        <ContactCard contact={data.contact} onSave={handleSaveContact} />
+
         {/* 登記表單 */}
         {activeRequests.length === 0 || showForm ? (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
@@ -231,8 +238,6 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
             <RegisterForm
               trustType={trustType} setTrustType={setTrustType}
               caseCount={caseCount} setCaseCount={setCaseCount}
-              contactInfo={contactInfo} setContactInfo={setContactInfo}
-              notifyEmail={notifyEmail} setNotifyEmail={setNotifyEmail}
               submitting={submitting} onSubmit={async e => { await handleSubmit(e); setShowForm(false) }}
             />
           </div>
@@ -369,21 +374,19 @@ function RequestCard({
   request: ExchangeRequest
   confirmedMatches: MatchProposal[]
   myCode: string
-  onEdit: (id: string, count: number, contact: string, email: string) => void
+  onEdit: (id: string, count: number) => void
   onCancel: (id: string) => void
   onCancelRequest: (matchId: string) => void
   onCancelConfirm: (matchId: string, action: 'approve' | 'reject' | 'withdraw') => void
 }) {
   const [editing, setEditing] = useState(false)
   const [editCount, setEditCount] = useState(String(request.requested_count))
-  const [editContact, setEditContact] = useState(request.contact_info ?? '')
-  const [editEmail, setEditEmail] = useState(request.notification_email ?? '')
   const isWaiting = request.status === 'waiting'
   const matchedCount = request.requested_count - request.remaining_count
   const pct = request.requested_count > 0 ? Math.round((matchedCount / request.requested_count) * 100) : 0
 
   function saveEdit() {
-    onEdit(request.id, parseInt(editCount), editContact, editEmail)
+    onEdit(request.id, parseInt(editCount))
     setEditing(false)
   }
 
@@ -498,35 +501,16 @@ function RequestCard({
           )}
           {editing ? (
             <div className="space-y-2">
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <label className="text-xs font-semibold text-gray-600 mb-1 block">總件數</label>
-                  <input
-                    type="number" min={1} value={editCount}
-                    onChange={e => setEditCount(e.target.value)}
-                    className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-                <div className="flex-1">
-                  <label className="text-xs font-semibold text-gray-600 mb-1 block">聯絡方式</label>
-                  <input
-                    type="text" value={editContact}
-                    onChange={e => setEditContact(e.target.value)}
-                    placeholder="選填"
-                    className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-              </div>
               <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1 block">
-                  通知信箱 <span className="text-gray-400 font-normal">（填了才會收到配對通知信）</span>
-                </label>
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">總件數</label>
                 <input
-                  type="email" value={editEmail}
-                  onChange={e => setEditEmail(e.target.value)}
-                  placeholder="選填，例：abc@bank.com.tw"
+                  type="number" min={1} value={editCount}
+                  onChange={e => setEditCount(e.target.value)}
                   className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:border-blue-500"
                 />
+                <p className="text-xs text-gray-400 mt-1.5">
+                  聯絡方式請改上方的「分行聯絡方式」，三種信託類型共用一份
+                </p>
               </div>
               <div className="flex gap-2">
                 <button onClick={() => setEditing(false)}
@@ -625,15 +609,117 @@ function PastHistoryCard({ proposal, myCode }: { proposal: MatchProposal; myCode
   )
 }
 
-function RegisterForm({ trustType, setTrustType, caseCount, setCaseCount, contactInfo, setContactInfo, notifyEmail, setNotifyEmail, submitting, onSubmit }: {
+/**
+ * 分行聯絡方式：整個分行共用一份，改一次三種信託類型都套用。
+ * 沒填過時用醒目樣式提示，因為別的分行看板上會看不到聯絡方式。
+ */
+function ContactCard({ contact, onSave }: {
+  contact: BranchContact
+  onSave: (contactInfo: string, email: string) => Promise<boolean>
+}) {
+  const [editing, setEditing] = useState(false)
+  const [info, setInfo] = useState(contact.contact_info ?? '')
+  const [email, setEmail] = useState(contact.notification_email ?? '')
+  const [saving, setSaving] = useState(false)
+
+  const isEmpty = !contact.contact_info && !contact.notification_email
+
+  function startEdit() {
+    setInfo(contact.contact_info ?? '')
+    setEmail(contact.notification_email ?? '')
+    setEditing(true)
+  }
+
+  async function save() {
+    setSaving(true)
+    const ok = await onSave(info.trim(), email.trim())
+    setSaving(false)
+    if (ok) setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <div className="bg-white rounded-2xl shadow-sm border border-blue-200 p-5 space-y-3">
+        <div>
+          <h2 className="font-bold text-gray-900">分行聯絡方式</h2>
+          <p className="text-xs text-gray-500 mt-0.5">整個分行共用，所有信託類型都適用</p>
+        </div>
+        <div>
+          <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+            聯絡方式 <span className="text-gray-400 font-normal">（會顯示在配對媒合頁）</span>
+          </label>
+          <input
+            type="text"
+            value={info}
+            onChange={e => setInfo(e.target.value)}
+            placeholder="例：分機 1234"
+            className="w-full border-2 border-gray-100 rounded-2xl px-4 py-3 text-gray-900 placeholder-gray-300 focus:outline-none focus:border-blue-500 bg-gray-50 focus:bg-white transition-colors"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+            通知信箱 <span className="text-gray-400 font-normal">（不會公開）</span>
+          </label>
+          <input
+            type="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            placeholder="例：abc@bank.com.tw"
+            className="w-full border-2 border-gray-100 rounded-2xl px-4 py-3 text-gray-900 placeholder-gray-300 focus:outline-none focus:border-blue-500 bg-gray-50 focus:bg-white transition-colors"
+          />
+          <p className="text-xs text-gray-400 mt-1.5">
+            填了才會在收到配對提案、配對成功時收到通知信
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => setEditing(false)}
+            className="flex-1 bg-gray-100 text-gray-600 py-2.5 rounded-xl text-sm font-semibold">取消</button>
+          <button onClick={save} disabled={saving}
+            className="flex-1 text-white py-2.5 rounded-xl text-sm font-bold disabled:opacity-50"
+            style={{ background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)' }}>
+            {saving ? '儲存中…' : '儲存'}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (isEmpty) {
+    return (
+      <button onClick={startEdit}
+        className="w-full bg-amber-50 rounded-2xl shadow-sm border border-amber-200 p-4 text-left hover:bg-amber-100 transition-colors">
+        <p className="text-amber-800 font-bold text-sm">尚未填寫分行聯絡方式</p>
+        <p className="text-amber-700 text-xs mt-0.5">
+          填了別的分行才知道怎麼聯絡你，也才能收到配對通知信 →
+        </p>
+      </button>
+    )
+  }
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-xs text-gray-400 font-medium">分行聯絡方式</p>
+        <p className="text-sm text-gray-800 font-semibold mt-1 truncate">
+          {contact.contact_info ? `📞 ${contact.contact_info}` : '📞 未填'}
+        </p>
+        <p className="text-xs text-gray-500 mt-0.5 truncate">
+          {contact.notification_email ? `✉️ ${contact.notification_email}` : '✉️ 未填，不會收到通知信'}
+        </p>
+      </div>
+      <button onClick={startEdit}
+        className="shrink-0 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm px-4 py-2 rounded-xl font-semibold transition-colors">
+        編輯
+      </button>
+    </div>
+  )
+}
+
+function RegisterForm({ trustType, setTrustType, caseCount, setCaseCount, submitting, onSubmit }: {
   trustType: TrustType
   setTrustType: (v: TrustType) => void
   caseCount: string
   setCaseCount: (v: string) => void
-  contactInfo: string
-  setContactInfo: (v: string) => void
-  notifyEmail: string
-  setNotifyEmail: (v: string) => void
   submitting: boolean
   onSubmit: (e: React.FormEvent) => void
 }) {
@@ -668,33 +754,6 @@ function RegisterForm({ trustType, setTrustType, caseCount, setCaseCount, contac
           placeholder="例：3"
           className="w-full border-2 border-gray-100 rounded-2xl px-4 py-3 text-gray-900 placeholder-gray-300 focus:outline-none focus:border-blue-500 bg-gray-50 focus:bg-white transition-colors text-lg font-bold"
         />
-      </div>
-      <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-          聯絡方式 <span className="text-gray-400 font-normal">（選填）</span>
-        </label>
-        <input
-          type="text"
-          value={contactInfo}
-          onChange={e => setContactInfo(e.target.value)}
-          placeholder="例：分機 1234"
-          className="w-full border-2 border-gray-100 rounded-2xl px-4 py-3 text-gray-900 placeholder-gray-300 focus:outline-none focus:border-blue-500 bg-gray-50 focus:bg-white transition-colors"
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-          通知信箱 <span className="text-gray-400 font-normal">（選填）</span>
-        </label>
-        <input
-          type="email"
-          value={notifyEmail}
-          onChange={e => setNotifyEmail(e.target.value)}
-          placeholder="例：abc@bank.com.tw"
-          className="w-full border-2 border-gray-100 rounded-2xl px-4 py-3 text-gray-900 placeholder-gray-300 focus:outline-none focus:border-blue-500 bg-gray-50 focus:bg-white transition-colors"
-        />
-        <p className="text-xs text-gray-400 mt-1.5">
-          填了才會在收到配對提案、配對成功時收到通知信
-        </p>
       </div>
       <button
         type="submit" disabled={submitting}

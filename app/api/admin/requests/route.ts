@@ -17,10 +17,12 @@ export async function GET(req: NextRequest) {
 
   const rows = db
     .prepare(
-      `SELECT * FROM exchange_requests
-       WHERE (@status IS NULL OR status = @status)
-         AND (@like IS NULL OR branch_name LIKE @like OR branch_code LIKE @like)
-       ORDER BY created_at DESC LIMIT 200`
+      `SELECT r.*, c.contact_info
+       FROM exchange_requests r
+       LEFT JOIN branch_contacts c ON c.branch_code = r.branch_code
+       WHERE (@status IS NULL OR r.status = @status)
+         AND (@like IS NULL OR r.branch_name LIKE @like OR r.branch_code LIKE @like)
+       ORDER BY r.created_at DESC LIMIT 200`
     )
     .all({ status: statusFilter, like }) as ExchangeRequest[]
 

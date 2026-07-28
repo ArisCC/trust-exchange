@@ -3,15 +3,11 @@ import { db, getRequest, nowISO, pendingCommitted, type MatchProposal } from '@/
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
-  const { case_count, contact_info, notification_email } = await req.json()
+  // 聯絡方式屬於分行，改由 /api/branch/[code]/contact 維護
+  const { case_count } = await req.json()
 
   if (!case_count || case_count < 1) {
     return NextResponse.json({ error: '件數不正確' }, { status: 400 })
-  }
-
-  const email = notification_email === undefined ? undefined : (notification_email ?? '').trim()
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return NextResponse.json({ error: '通知信箱格式不正確' }, { status: 400 })
   }
 
   const result = db.transaction(() => {
@@ -37,18 +33,9 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     db.prepare(
       `UPDATE exchange_requests
-       SET requested_count = ?, remaining_count = ?, status = ?,
-           contact_info = ?, notification_email = ?, updated_at = ?
+       SET requested_count = ?, remaining_count = ?, status = ?, updated_at = ?
        WHERE id = ?`
-    ).run(
-      case_count,
-      newRemaining,
-      newRemaining === 0 ? 'completed' : 'waiting',
-      contact_info ?? existing.contact_info,
-      email === undefined ? existing.notification_email : email || null,
-      nowISO(),
-      id
-    )
+    ).run(case_count, newRemaining, newRemaining === 0 ? 'completed' : 'waiting', nowISO(), id)
 
     return null
   }).immediate()

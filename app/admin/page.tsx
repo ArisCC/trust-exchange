@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import type { ExchangeRequest, MatchProposal } from '@/lib/supabase'
-import { TRUST_TYPE_LABELS } from '@/lib/supabase'
+import type { ExchangeRequest, MatchProposal } from '@/lib/types'
+import { TRUST_TYPE_LABELS } from '@/lib/types'
 
 type Stats = {
   totalRequests: number

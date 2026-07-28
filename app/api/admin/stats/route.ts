@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { db, type MatchProposal } from '@/lib/db'
 
 function isAuthed(req: NextRequest) {
   return req.cookies.get('admin_auth')?.value === process.env.ADMIN_PASSWORD
@@ -10,40 +10,30 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: '未授權' }, { status: 401 })
   }
 
-  const [
-    { count: totalRequests },
-    { count: waitingRequests },
-    { count: completedRequests },
-    { count: totalMatches },
-    { data: recentMatches },
-    { data: topBranches },
-  ] = await Promise.all([
-    supabase.from('exchange_requests').select('*', { count: 'exact', head: true }),
-    supabase.from('exchange_requests').select('*', { count: 'exact', head: true }).eq('status', 'waiting'),
-    supabase.from('exchange_requests').select('*', { count: 'exact', head: true }).eq('status', 'completed'),
-    supabase.from('match_proposals').select('*', { count: 'exact', head: true }).eq('status', 'confirmed'),
-    supabase.from('match_proposals').select('*').eq('status', 'confirmed').order('confirmed_at', { ascending: false }).limit(10),
-    supabase.from('match_proposals').select('from_branch_code, from_branch_name').eq('status', 'confirmed'),
-  ])
+  const count = (sql: string) => (db.prepare(sql).get() as { c: number }).c
 
-  const branchCount: Record<string, { name: string; count: number }> = {}
-  for (const m of topBranches ?? []) {
-    if (!branchCount[m.from_branch_code]) {
-      branchCount[m.from_branch_code] = { name: m.from_branch_name, count: 0 }
-    }
-    branchCount[m.from_branch_code].count++
-  }
-  const activeBranches = Object.entries(branchCount)
-    .map(([code, v]) => ({ code, name: v.name, count: v.count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 5)
+  const recentMatches = db
+    .prepare(
+      `SELECT * FROM match_proposals WHERE status = 'confirmed'
+       ORDER BY confirmed_at DESC LIMIT 10`
+    )
+    .all() as MatchProposal[]
+
+  const activeBranches = db
+    .prepare(
+      `SELECT from_branch_code AS code, from_branch_name AS name, COUNT(*) AS count
+       FROM match_proposals WHERE status = 'confirmed'
+       GROUP BY from_branch_code
+       ORDER BY count DESC LIMIT 5`
+    )
+    .all() as { code: string; name: string; count: number }[]
 
   return NextResponse.json({
-    totalRequests: totalRequests ?? 0,
-    waitingRequests: waitingRequests ?? 0,
-    completedRequests: completedRequests ?? 0,
-    totalMatches: totalMatches ?? 0,
-    recentMatches: recentMatches ?? [],
+    totalRequests: count('SELECT COUNT(*) c FROM exchange_requests'),
+    waitingRequests: count("SELECT COUNT(*) c FROM exchange_requests WHERE status = 'waiting'"),
+    completedRequests: count("SELECT COUNT(*) c FROM exchange_requests WHERE status = 'completed'"),
+    totalMatches: count("SELECT COUNT(*) c FROM match_proposals WHERE status = 'confirmed'"),
+    recentMatches,
     activeBranches,
   })
 }

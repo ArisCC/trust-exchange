@@ -1,102 +1,85 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { db, nowISO, placeholders, type ExchangeRequest, type MatchProposal } from '@/lib/db'
+
+const EMPTY = {
+  myRequests: [],
+  incomingProposals: [],
+  outgoingProposals: [],
+  confirmedMatches: [],
+  pastHistory: [],
+}
 
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ code: string }> }) {
   const { code } = await ctx.params
 
-  const { data: myRequests } = await supabase
-    .from('exchange_requests')
-    .select('*')
-    .eq('branch_code', code)
-    .order('created_at', { ascending: false })
-
   // 自動修正：remaining=0 但 status 還是 waiting 的舊資料
-  const stale = (myRequests ?? []).filter(r => r.remaining_count === 0 && r.status === 'waiting')
-  if (stale.length > 0) {
-    await supabase.from('exchange_requests')
-      .update({ status: 'completed' })
-      .in('id', stale.map(r => r.id))
-    stale.forEach(r => { r.status = 'completed' })
-  }
+  db.prepare(
+    `UPDATE exchange_requests SET status = 'completed', updated_at = ?
+     WHERE branch_code = ? AND remaining_count = 0 AND status = 'waiting'`
+  ).run(nowISO(), code)
 
-  const allIds = (myRequests ?? []).map(r => r.id)
+  const myRequests = db
+    .prepare('SELECT * FROM exchange_requests WHERE branch_code = ? ORDER BY created_at DESC')
+    .all(code) as ExchangeRequest[]
+
+  if (myRequests.length === 0) return NextResponse.json(EMPTY)
+
+  const allIds = myRequests.map(r => r.id)
   // 只用未取消的申請 ID 查詢配對資料，避免已取消的申請帶出舊配對
-  const activeIds = (myRequests ?? []).filter(r => r.status !== 'cancelled').map(r => r.id)
+  const activeIds = myRequests.filter(r => r.status !== 'cancelled').map(r => r.id)
 
-  if (allIds.length === 0) {
-    return NextResponse.json({
-      myRequests: [],
-      incomingProposals: [],
-      outgoingProposals: [],
-      confirmedMatches: [],
-      pastHistory: [],
-    })
+  const allPh = placeholders(allIds.length)
+
+  const pastHistory = db
+    .prepare(
+      `SELECT * FROM match_proposals
+       WHERE (from_request_id IN (${allPh}) OR to_request_id IN (${allPh}))
+         AND status IN ('cancelled', 'rejected')
+       ORDER BY created_at DESC LIMIT 30`
+    )
+    .all(...allIds, ...allIds) as MatchProposal[]
+
+  if (activeIds.length === 0) {
+    return NextResponse.json({ ...EMPTY, myRequests, pastHistory })
   }
 
-  const activeList = activeIds.join(',')
-  const allList = allIds.join(',')
+  const ph = placeholders(activeIds.length)
 
-  const [
-    { data: incomingProposals },
-    { data: outgoingProposals },
-    { data: rawConfirmedMatches },
-    { data: pastHistory },
-  ] = await Promise.all([
-    activeIds.length > 0
-      ? supabase.from('match_proposals').select('*')
-          .in('to_request_id', activeIds)
-          .eq('status', 'pending')
-          .order('created_at', { ascending: false })
-      : Promise.resolve({ data: [] }),
-
-    activeIds.length > 0
-      ? supabase.from('match_proposals').select('*')
-          .in('from_request_id', activeIds)
-          .eq('status', 'pending')
-          .order('created_at', { ascending: false })
-      : Promise.resolve({ data: [] }),
-
-    activeIds.length > 0
-      ? supabase.from('match_proposals').select('*')
-          .or(`from_request_id.in.(${activeList}),to_request_id.in.(${activeList})`)
-          .eq('status', 'confirmed')
-          .order('confirmed_at', { ascending: false })
-      : Promise.resolve({ data: [] }),
-
-    supabase.from('match_proposals').select('*')
-      .or(`from_request_id.in.(${allList}),to_request_id.in.(${allList})`)
-      .in('status', ['cancelled', 'rejected'])
-      .order('created_at', { ascending: false })
-      .limit(30),
-  ])
-
-  // 過濾掉對方申請也已取消的已確認配對（處理舊資料不一致的情況）
-  const confirmedMatches = rawConfirmedMatches ?? []
-  let filteredConfirmed = confirmedMatches
-  if (confirmedMatches.length > 0) {
-    const otherIds = confirmedMatches.map(m =>
-      activeIds.includes(m.from_request_id) ? m.to_request_id : m.from_request_id
+  const incomingProposals = db
+    .prepare(
+      `SELECT * FROM match_proposals
+       WHERE to_request_id IN (${ph}) AND status = 'pending'
+       ORDER BY created_at DESC`
     )
-    const uniqueOtherIds = [...new Set(otherIds)]
-    const { data: otherRequests } = await supabase
-      .from('exchange_requests')
-      .select('id, status')
-      .in('id', uniqueOtherIds)
+    .all(...activeIds) as MatchProposal[]
 
-    const cancelledOtherIds = new Set(
-      (otherRequests ?? []).filter(r => r.status === 'cancelled').map(r => r.id)
+  const outgoingProposals = db
+    .prepare(
+      `SELECT * FROM match_proposals
+       WHERE from_request_id IN (${ph}) AND status = 'pending'
+       ORDER BY created_at DESC`
     )
-    filteredConfirmed = confirmedMatches.filter(m => {
-      const otherId = activeIds.includes(m.from_request_id) ? m.to_request_id : m.from_request_id
-      return !cancelledOtherIds.has(otherId)
-    })
-  }
+    .all(...activeIds) as MatchProposal[]
+
+  // JOIN 排除對方申請已取消的已確認配對（處理舊資料不一致的情況）。
+  // 我方必為未取消（來自 activeIds），故兩側皆未取消 == 對方未取消。
+  const confirmedMatches = db
+    .prepare(
+      `SELECT p.* FROM match_proposals p
+       JOIN exchange_requests rf ON rf.id = p.from_request_id
+       JOIN exchange_requests rt ON rt.id = p.to_request_id
+       WHERE p.status = 'confirmed'
+         AND (p.from_request_id IN (${ph}) OR p.to_request_id IN (${ph}))
+         AND rf.status != 'cancelled' AND rt.status != 'cancelled'
+       ORDER BY p.confirmed_at DESC`
+    )
+    .all(...activeIds, ...activeIds) as MatchProposal[]
 
   return NextResponse.json({
-    myRequests: myRequests ?? [],
-    incomingProposals: incomingProposals ?? [],
-    outgoingProposals: outgoingProposals ?? [],
-    confirmedMatches: filteredConfirmed,
-    pastHistory: pastHistory ?? [],
+    myRequests,
+    incomingProposals,
+    outgoingProposals,
+    confirmedMatches,
+    pastHistory,
   })
 }

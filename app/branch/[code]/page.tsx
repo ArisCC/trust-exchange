@@ -4,8 +4,8 @@ import { use, useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { findBranch } from '@/lib/branches'
-import type { ExchangeRequest, MatchProposal, TrustType } from '@/lib/supabase'
-import { TRUST_TYPE_LABELS } from '@/lib/supabase'
+import type { ExchangeRequest, MatchProposal, TrustType } from '@/lib/types'
+import { TRUST_TYPE_LABELS } from '@/lib/types'
 
 type DashboardData = {
   myRequests: ExchangeRequest[]
@@ -23,6 +23,7 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
   const [trustType, setTrustType] = useState<TrustType>('disability')
   const [caseCount, setCaseCount] = useState('')
   const [contactInfo, setContactInfo] = useState('')
+  const [notifyEmail, setNotifyEmail] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [processingId, setProcessingId] = useState<string | null>(null)
@@ -58,10 +59,12 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
         trust_type: trustType,
         case_count: parseInt(caseCount),
         contact_info: contactInfo || null,
+        notification_email: notifyEmail || null,
       }),
     })
     setCaseCount('')
     setContactInfo('')
+    setNotifyEmail('')
     setSubmitting(false)
     load()
   }
@@ -81,11 +84,15 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
     load()
   }
 
-  async function handleEdit(requestId: string, newCount: number, newContact: string) {
+  async function handleEdit(requestId: string, newCount: number, newContact: string, newEmail: string) {
     const res = await fetch(`/api/request/${requestId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ case_count: newCount, contact_info: newContact || null }),
+      body: JSON.stringify({
+        case_count: newCount,
+        contact_info: newContact || null,
+        notification_email: newEmail || null,
+      }),
     })
     const d = await res.json()
     if (!res.ok) showToast(d.error ?? '編輯失敗')
@@ -225,6 +232,7 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
               trustType={trustType} setTrustType={setTrustType}
               caseCount={caseCount} setCaseCount={setCaseCount}
               contactInfo={contactInfo} setContactInfo={setContactInfo}
+              notifyEmail={notifyEmail} setNotifyEmail={setNotifyEmail}
               submitting={submitting} onSubmit={async e => { await handleSubmit(e); setShowForm(false) }}
             />
           </div>
@@ -361,7 +369,7 @@ function RequestCard({
   request: ExchangeRequest
   confirmedMatches: MatchProposal[]
   myCode: string
-  onEdit: (id: string, count: number, contact: string) => void
+  onEdit: (id: string, count: number, contact: string, email: string) => void
   onCancel: (id: string) => void
   onCancelRequest: (matchId: string) => void
   onCancelConfirm: (matchId: string, action: 'approve' | 'reject' | 'withdraw') => void
@@ -369,12 +377,13 @@ function RequestCard({
   const [editing, setEditing] = useState(false)
   const [editCount, setEditCount] = useState(String(request.requested_count))
   const [editContact, setEditContact] = useState(request.contact_info ?? '')
+  const [editEmail, setEditEmail] = useState(request.notification_email ?? '')
   const isWaiting = request.status === 'waiting'
   const matchedCount = request.requested_count - request.remaining_count
   const pct = request.requested_count > 0 ? Math.round((matchedCount / request.requested_count) * 100) : 0
 
   function saveEdit() {
-    onEdit(request.id, parseInt(editCount), editContact)
+    onEdit(request.id, parseInt(editCount), editContact, editEmail)
     setEditing(false)
   }
 
@@ -508,6 +517,17 @@ function RequestCard({
                   />
                 </div>
               </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">
+                  通知信箱 <span className="text-gray-400 font-normal">（填了才會收到配對通知信）</span>
+                </label>
+                <input
+                  type="email" value={editEmail}
+                  onChange={e => setEditEmail(e.target.value)}
+                  placeholder="選填，例：abc@bank.com.tw"
+                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:border-blue-500"
+                />
+              </div>
               <div className="flex gap-2">
                 <button onClick={() => setEditing(false)}
                   className="flex-1 bg-gray-100 text-gray-600 py-2 rounded-xl text-sm font-semibold">取消</button>
@@ -605,13 +625,15 @@ function PastHistoryCard({ proposal, myCode }: { proposal: MatchProposal; myCode
   )
 }
 
-function RegisterForm({ trustType, setTrustType, caseCount, setCaseCount, contactInfo, setContactInfo, submitting, onSubmit }: {
+function RegisterForm({ trustType, setTrustType, caseCount, setCaseCount, contactInfo, setContactInfo, notifyEmail, setNotifyEmail, submitting, onSubmit }: {
   trustType: TrustType
   setTrustType: (v: TrustType) => void
   caseCount: string
   setCaseCount: (v: string) => void
   contactInfo: string
   setContactInfo: (v: string) => void
+  notifyEmail: string
+  setNotifyEmail: (v: string) => void
   submitting: boolean
   onSubmit: (e: React.FormEvent) => void
 }) {
@@ -655,9 +677,24 @@ function RegisterForm({ trustType, setTrustType, caseCount, setCaseCount, contac
           type="text"
           value={contactInfo}
           onChange={e => setContactInfo(e.target.value)}
-          placeholder="例：分機 1234 或 email"
+          placeholder="例：分機 1234"
           className="w-full border-2 border-gray-100 rounded-2xl px-4 py-3 text-gray-900 placeholder-gray-300 focus:outline-none focus:border-blue-500 bg-gray-50 focus:bg-white transition-colors"
         />
+      </div>
+      <div>
+        <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+          通知信箱 <span className="text-gray-400 font-normal">（選填）</span>
+        </label>
+        <input
+          type="email"
+          value={notifyEmail}
+          onChange={e => setNotifyEmail(e.target.value)}
+          placeholder="例：abc@bank.com.tw"
+          className="w-full border-2 border-gray-100 rounded-2xl px-4 py-3 text-gray-900 placeholder-gray-300 focus:outline-none focus:border-blue-500 bg-gray-50 focus:bg-white transition-colors"
+        />
+        <p className="text-xs text-gray-400 mt-1.5">
+          填了才會在收到配對提案、配對成功時收到通知信
+        </p>
       </div>
       <button
         type="submit" disabled={submitting}

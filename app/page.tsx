@@ -71,7 +71,7 @@ export default function Home() {
           </svg>
         </div>
         <h1 className="text-3xl font-bold text-white tracking-tight">信託案件交換平台</h1>
-        <p className="text-blue-300 mt-1.5 text-sm">身心障礙預開式信託・分行互換媒合</p>
+        <p className="text-blue-300 mt-1.5 text-sm">提供身心障礙信託、一般預開信託及安養信託案件交換媒合</p>
       </div>
 
       {/* Steps */}

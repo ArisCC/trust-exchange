@@ -1,9 +1,5 @@
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// 前後端共用的型別與常數。
+// 這個檔案不能 import 任何 Node 模組 —— 它會被打包進 client bundle。
 
 export type TrustType = 'disability' | 'general' | 'care'
 
@@ -21,6 +17,7 @@ export type ExchangeRequest = {
   requested_count: number
   remaining_count: number
   contact_info: string | null
+  notification_email: string | null
   status: 'waiting' | 'completed' | 'cancelled'
   created_at: string
   updated_at: string

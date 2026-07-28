@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { db, type ExchangeRequest } from '@/lib/db'
 
 function isAuthed(req: NextRequest) {
   return req.cookies.get('admin_auth')?.value === process.env.ADMIN_PASSWORD
@@ -12,16 +12,17 @@ export async function GET(req: NextRequest) {
   const status = searchParams.get('status') // waiting | completed | cancelled | all
   const q = searchParams.get('q') ?? ''
 
-  let query = supabase
-    .from('exchange_requests')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(200)
+  const statusFilter = status && status !== 'all' ? status : null
+  const like = q ? `%${q}%` : null
 
-  if (status && status !== 'all') query = query.eq('status', status)
-  if (q) query = query.or(`branch_name.ilike.%${q}%,branch_code.ilike.%${q}%`)
+  const rows = db
+    .prepare(
+      `SELECT * FROM exchange_requests
+       WHERE (@status IS NULL OR status = @status)
+         AND (@like IS NULL OR branch_name LIKE @like OR branch_code LIKE @like)
+       ORDER BY created_at DESC LIMIT 200`
+    )
+    .all({ status: statusFilter, like }) as ExchangeRequest[]
 
-  const { data, error } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data ?? [])
+  return NextResponse.json(rows)
 }

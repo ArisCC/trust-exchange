@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { db, nowISO } from '@/lib/db'
 
 function isAuthed(req: NextRequest) {
   return req.cookies.get('admin_auth')?.value === process.env.ADMIN_PASSWORD
@@ -8,37 +8,31 @@ function isAuthed(req: NextRequest) {
 export async function POST(req: NextRequest) {
   if (!isAuthed(req)) return NextResponse.json({ error: '未授權' }, { status: 401 })
 
-  const now = new Date().toISOString()
+  const reset = db.transaction(() => {
+    const requests = db
+      .prepare(
+        "SELECT COUNT(*) c FROM exchange_requests WHERE status IN ('waiting', 'completed')"
+      )
+      .get() as { c: number }
+    const proposals = db
+      .prepare(
+        "SELECT COUNT(*) c FROM match_proposals WHERE status IN ('pending', 'confirmed')"
+      )
+      .get() as { c: number }
 
-  // Count what will be affected before resetting
-  const [{ count: activeRequests }, { count: activeProposals }] = await Promise.all([
-    supabase.from('exchange_requests').select('*', { count: 'exact', head: true })
-      .in('status', ['waiting', 'completed']),
-    supabase.from('match_proposals').select('*', { count: 'exact', head: true })
-      .in('status', ['pending', 'confirmed']),
-  ])
+    db.prepare(
+      `UPDATE exchange_requests SET status = 'cancelled', updated_at = ?
+       WHERE status IN ('waiting', 'completed')`
+    ).run(nowISO())
 
-  // Cancel all active exchange requests
-  const { error: reqErr } = await supabase
-    .from('exchange_requests')
-    .update({ status: 'cancelled', updated_at: now })
-    .in('status', ['waiting', 'completed'])
+    db.prepare(
+      `UPDATE match_proposals
+       SET status = 'cancelled', cancel_status = 'none', cancel_requested_by = NULL
+       WHERE status IN ('pending', 'confirmed')`
+    ).run()
 
-  if (reqErr) return NextResponse.json({ error: reqErr.message }, { status: 500 })
+    return { requests: requests.c, proposals: proposals.c }
+  }).immediate()
 
-  // Cancel all active proposals
-  const { error: propErr } = await supabase
-    .from('match_proposals')
-    .update({ status: 'cancelled', cancel_status: 'none', cancel_requested_by: null })
-    .in('status', ['pending', 'confirmed'])
-
-  if (propErr) return NextResponse.json({ error: propErr.message }, { status: 500 })
-
-  return NextResponse.json({
-    ok: true,
-    reset: {
-      requests: activeRequests ?? 0,
-      proposals: activeProposals ?? 0,
-    },
-  })
+  return NextResponse.json({ ok: true, reset })
 }

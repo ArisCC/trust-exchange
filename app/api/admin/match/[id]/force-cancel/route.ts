@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { db, getProposal, nowISO } from '@/lib/db'
 
 function isAuthed(req: NextRequest) {
   return req.cookies.get('admin_auth')?.value === process.env.ADMIN_PASSWORD
@@ -9,37 +9,34 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (!isAuthed(req)) return NextResponse.json({ error: '未授權' }, { status: 401 })
 
   const { id } = await ctx.params
-  const now = new Date().toISOString()
 
-  const { data: proposal } = await supabase
-    .from('match_proposals')
-    .select('*')
-    .eq('id', id)
-    .eq('status', 'confirmed')
-    .single()
+  const result = db.transaction(() => {
+    const proposal = getProposal(id)
+    if (!proposal || proposal.status !== 'confirmed') {
+      return { error: '找不到已確認的配對' }
+    }
 
-  if (!proposal) return NextResponse.json({ error: '找不到已確認的配對' }, { status: 404 })
+    db.prepare(
+      `UPDATE match_proposals
+       SET status = 'cancelled', cancel_status = 'none', cancel_requested_by = NULL
+       WHERE id = ?`
+    ).run(id)
 
-  const [{ data: fromReq }, { data: toReq }] = await Promise.all([
-    supabase.from('exchange_requests').select('*').eq('id', proposal.from_request_id).single(),
-    supabase.from('exchange_requests').select('*').eq('id', proposal.to_request_id).single(),
-  ])
+    // 已取消的申請不因為還件而復活，其餘回到 waiting
+    const restore = db.prepare(
+      `UPDATE exchange_requests
+       SET remaining_count = remaining_count + ?,
+           status = CASE WHEN status = 'cancelled' THEN 'cancelled' ELSE 'waiting' END,
+           updated_at = ?
+       WHERE id = ?`
+    )
+    const now = nowISO()
+    restore.run(proposal.proposed_count, now, proposal.from_request_id)
+    restore.run(proposal.proposed_count, now, proposal.to_request_id)
 
-  await Promise.all([
-    supabase.from('match_proposals')
-      .update({ status: 'cancelled', cancel_status: 'none', cancel_requested_by: null })
-      .eq('id', id),
-    fromReq && supabase.from('exchange_requests').update({
-      remaining_count: fromReq.remaining_count + proposal.proposed_count,
-      status: 'waiting',
-      updated_at: now,
-    }).eq('id', proposal.from_request_id),
-    toReq && supabase.from('exchange_requests').update({
-      remaining_count: toReq.remaining_count + proposal.proposed_count,
-      status: 'waiting',
-      updated_at: now,
-    }).eq('id', proposal.to_request_id),
-  ])
+    return null
+  }).immediate()
 
+  if (result) return NextResponse.json({ error: result.error }, { status: 404 })
   return NextResponse.json({ ok: true })
 }

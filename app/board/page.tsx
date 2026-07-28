@@ -4,8 +4,8 @@ import { useEffect, useState, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { findBranch, REGIONS, type Region } from '@/lib/branches'
-import type { ExchangeRequest, MatchProposal, TrustType } from '@/lib/supabase'
-import { TRUST_TYPE_LABELS } from '@/lib/supabase'
+import type { ExchangeRequest, MatchProposal, TrustType } from '@/lib/types'
+import { TRUST_TYPE_LABELS } from '@/lib/types'
 
 function BoardContent() {
   const searchParams = useSearchParams()

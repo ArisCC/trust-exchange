@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { db } from '@/lib/db'
 
+export const dynamic = 'force-dynamic'
+
+// 健康檢查：確認 DB 檔案可讀寫
 export async function GET() {
-  await supabase.from('exchange_requests').select('id').limit(1)
-  return NextResponse.json({ ok: true, time: new Date().toISOString() })
+  const { c } = db.prepare('SELECT COUNT(*) c FROM exchange_requests').get() as { c: number }
+  return NextResponse.json({ ok: true, requests: c, time: new Date().toISOString() })
 }

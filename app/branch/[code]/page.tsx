@@ -143,6 +143,7 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
 
   const waitingRequests = data.myRequests.filter(r => r.status === 'waiting')
   const activeRequests = data.myRequests.filter(r => r.status !== 'cancelled')
+  const cancelledRequests = data.myRequests.filter(r => r.status === 'cancelled')
   const pendingIn = data.incomingProposals.length
   const pendingCancelIn = data.confirmedMatches.filter(
     m => m.cancel_status === 'pending' && m.cancel_requested_by !== code
@@ -353,12 +354,43 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
             {/* 歷史紀錄 */}
             {tab === 'history' && (
               <div className="space-y-2">
-                {data.pastHistory.length === 0 && (
+                {data.pastHistory.length === 0 && cancelledRequests.length === 0 && (
                   <p className="text-center text-sm text-gray-400 py-8">尚無歷史紀錄</p>
                 )}
-                {data.pastHistory.map(p => (
-                  <PastHistoryCard key={p.id} proposal={p} myCode={code} />
-                ))}
+
+                {/* 已撤下的登記也要留痕跡，否則使用者只會看到東西憑空消失 */}
+                {cancelledRequests.length > 0 && (
+                  <>
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wider px-1">已撤下的登記</p>
+                    {cancelledRequests.map(r => (
+                      <div key={r.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                        <div>
+                          <p className="font-semibold text-gray-800">
+                            {TRUST_TYPE_LABELS[r.trust_type]}
+                            <span className="text-gray-400 text-xs font-normal ml-2">{r.requested_count} 件</span>
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {new Date(r.updated_at).toLocaleDateString('zh-TW')} 撤下
+                          </p>
+                        </div>
+                        <span className="text-xs px-3 py-1.5 rounded-full font-bold bg-gray-200 text-gray-500">
+                          已撤下
+                        </span>
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {data.pastHistory.length > 0 && (
+                  <>
+                    {cancelledRequests.length > 0 && (
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider px-1 pt-3">配對紀錄</p>
+                    )}
+                    {data.pastHistory.map(p => (
+                      <PastHistoryCard key={p.id} proposal={p} myCode={code} />
+                    ))}
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -388,6 +420,40 @@ function RequestCard({
   function saveEdit() {
     onEdit(request.id, parseInt(editCount))
     setEditing(false)
+  }
+
+  /**
+   * 撤下整筆登記會連已確認的配對一起還原，後果比使用者預期的大很多。
+   * 曾經有分行把這個當成「解除單筆配對」按下去，整筆 5 件登記連同已確認的配對一起沒了，
+   * 所以這裡把會發生的事逐項寫清楚，已有配對時還要再確認一次。
+   */
+  function confirmWithdraw() {
+    const activeMatches = confirmedMatches.filter(m => m.status === 'confirmed')
+    const matchedCases = activeMatches.reduce((s, m) => s + m.proposed_count, 0)
+
+    const lines = [
+      `確定要撤下「${TRUST_TYPE_LABELS[request.trust_type]} ${request.requested_count} 件」這整筆登記嗎？`,
+      '',
+      '會發生的事：',
+      '・這筆登記從配對媒合頁下架',
+      '・所有待確認的邀請一併婉拒',
+    ]
+    if (activeMatches.length > 0) {
+      lines.push(
+        `・已完成的 ${activeMatches.length} 筆配對（共 ${matchedCases} 件）會一併解除，件數退還給對方`,
+        '',
+        '※ 若只是想解除其中一筆配對，請關掉這個視窗，改按該筆配對右側的「解除這筆配對」。'
+      )
+    }
+    if (!confirm(lines.join('\n'))) return
+
+    if (activeMatches.length > 0) {
+      const names = activeMatches
+        .map(m => (m.from_request_id === request.id ? m.to_branch_name : m.from_branch_name))
+        .join('、')
+      if (!confirm(`再次確認：與 ${names} 已完成的配對會被解除。確定撤下整筆登記？`)) return
+    }
+    onCancel(request.id)
   }
 
   return (
@@ -454,7 +520,7 @@ function RequestCard({
                     {m.cancel_status === 'none' && (
                       <button onClick={() => onCancelRequest(m.id)}
                         className="text-xs text-gray-400 hover:text-red-500 border border-gray-200 hover:border-red-300 px-2.5 py-1.5 rounded-lg transition-colors">
-                        申請取消
+                        解除這筆配對
                       </button>
                     )}
                     {m.cancel_status === 'pending' && iRequested && (
@@ -526,9 +592,9 @@ function RequestCard({
                 className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm py-2.5 rounded-xl font-semibold transition-colors">
                 編輯
               </button>
-              <button onClick={() => { if (confirm('確定取消這筆申請？所有待確認邀請也會一併取消。')) onCancel(request.id) }}
+              <button onClick={confirmWithdraw}
                 className="flex-1 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 text-sm py-2.5 rounded-xl font-semibold transition-colors">
-                取消申請
+                撤下整筆登記
               </button>
             </div>
           )}

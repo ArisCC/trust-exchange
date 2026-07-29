@@ -108,8 +108,16 @@ DB 連線是延遲開啟的：`next build` 會 import 每個 route module，若�
 npm run build && launchctl kickstart -k gui/$(id -u)/me.aris7.trust-exchange
 ```
 
-備份資料庫直接複製檔案即可：
+### 備份
+
+每天凌晨 4 點由 LaunchAgent `me.aris7.trust-exchange-backup` 自動執行，
+保留 30 天，日誌在 `~/Library/Logs/trust-exchange-backup.log`。手動執行：
 
 ```bash
-cp /Users/l.e.o./leo-data/trust-exchange/trust-exchange.db ~/backup/
+node scripts/backup.mjs
 ```
+
+**不要用 `cp` 備份。** 資料庫開在 WAL 模式，最近的交易還在 `.db-wal` 裡，
+複製主檔只會拿到上次 checkpoint 的舊快照 —— 實際發生過，備出來的檔案少了
+當天全部活動（36 筆只備到 33 筆）。`scripts/backup.mjs` 用 `VACUUM INTO`
+取得含 WAL 內容的一致性快照，並在備份後驗證 `integrity_check` 與筆數。

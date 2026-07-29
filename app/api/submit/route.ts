@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db, newId, nowISO } from '@/lib/db'
 
 export async function POST(req: NextRequest) {
-  const { branch_code, branch_name, trust_type, case_count } = await req.json()
+  const { branch_code, branch_name, trust_type, case_count, customer_count } = await req.json()
 
   const validTypes = ['disability', 'general', 'care']
   if (!branch_code || !branch_name || !case_count || case_count < 1) {
@@ -12,6 +12,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '請選擇信託類型' }, { status: 400 })
   }
 
+  // 客戶數選填；填了就必須介於 1 與件數之間（件數不可能來自比它更多的客戶）
+  const customers = customer_count == null || customer_count === '' ? null : Number(customer_count)
+  if (customers !== null && (!Number.isInteger(customers) || customers < 1 || customers > case_count)) {
+    return NextResponse.json({ error: `客戶數需介於 1 與 ${case_count} 之間` }, { status: 400 })
+  }
+
   // 聯絡方式屬於分行，在 /api/branch/[code]/contact 單獨維護，這裡不重複收
   const id = newId()
   const now = nowISO()
@@ -19,9 +25,9 @@ export async function POST(req: NextRequest) {
   db.prepare(
     `INSERT INTO exchange_requests
        (id, branch_code, branch_name, trust_type, requested_count, remaining_count,
-        status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'waiting', ?, ?)`
-  ).run(id, branch_code, branch_name, trust_type, case_count, case_count, now, now)
+        customer_count, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'waiting', ?, ?)`
+  ).run(id, branch_code, branch_name, trust_type, case_count, case_count, customers, now, now)
 
   return NextResponse.json({ id })
 }

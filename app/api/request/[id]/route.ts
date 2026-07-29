@@ -4,10 +4,15 @@ import { db, getRequest, nowISO, pendingCommitted, type MatchProposal } from '@/
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
   // 聯絡方式屬於分行，改由 /api/branch/[code]/contact 維護
-  const { case_count } = await req.json()
+  const { case_count, customer_count } = await req.json()
 
   if (!case_count || case_count < 1) {
     return NextResponse.json({ error: '件數不正確' }, { status: 400 })
+  }
+
+  const customers = customer_count == null || customer_count === '' ? null : Number(customer_count)
+  if (customers !== null && (!Number.isInteger(customers) || customers < 1 || customers > case_count)) {
+    return NextResponse.json({ error: `客戶數需介於 1 與 ${case_count} 之間` }, { status: 400 })
   }
 
   const result = db.transaction(() => {
@@ -33,9 +38,16 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     db.prepare(
       `UPDATE exchange_requests
-       SET requested_count = ?, remaining_count = ?, status = ?, updated_at = ?
+       SET requested_count = ?, remaining_count = ?, customer_count = ?, status = ?, updated_at = ?
        WHERE id = ?`
-    ).run(case_count, newRemaining, newRemaining === 0 ? 'completed' : 'waiting', nowISO(), id)
+    ).run(
+      case_count,
+      newRemaining,
+      customers,
+      newRemaining === 0 ? 'completed' : 'waiting',
+      nowISO(),
+      id
+    )
 
     return null
   }).immediate()

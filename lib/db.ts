@@ -3,7 +3,12 @@ import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import type { BranchContact, ExchangeRequest, MatchProposal } from './types'
+import type {
+  BranchContact,
+  ExchangeRequest,
+  MatchProposal,
+  TrustType as TrustTypeValue,
+} from './types'
 
 export type { TrustType, BranchContact, ExchangeRequest, MatchProposal } from './types'
 export { TRUST_TYPE_LABELS } from './types'
@@ -13,17 +18,18 @@ const DB_PATH =
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS exchange_requests (
-  id                 TEXT PRIMARY KEY,
-  branch_code        TEXT NOT NULL,
-  branch_name        TEXT NOT NULL,
-  trust_type         TEXT NOT NULL DEFAULT 'disability',
-  requested_count    INTEGER NOT NULL,
-  remaining_count    INTEGER NOT NULL,
-  contact_info       TEXT,
-  notification_email TEXT,
-  status             TEXT NOT NULL DEFAULT 'waiting',
-  created_at         TEXT NOT NULL,
-  updated_at         TEXT NOT NULL
+  id              TEXT PRIMARY KEY,
+  branch_code     TEXT NOT NULL,
+  branch_name     TEXT NOT NULL,
+  trust_type      TEXT NOT NULL DEFAULT 'disability',
+  requested_count INTEGER NOT NULL,
+  remaining_count INTEGER NOT NULL,
+  -- 這些件數來自幾位不同客戶。同一客戶在同一分行只能計一件，所以這個數字就是
+  -- 「跟任一家分行累計能交換的件數上限」。NULL = 尚未填寫，不做上限提醒。
+  customer_count  INTEGER,
+  status          TEXT NOT NULL DEFAULT 'waiting',
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS match_proposals (
@@ -57,42 +63,59 @@ CREATE INDEX IF NOT EXISTS idx_prop_to     ON match_proposals(to_request_id);
 CREATE INDEX IF NOT EXISTS idx_prop_status ON match_proposals(status);
 `
 
-/**
- * 聯絡方式原本存在每一筆 exchange_requests 上，同一家分行登記多種信託類型時
- * 要重複填、也要逐筆改，實際資料裡因此出現同分行「#168」與「168」並存的情況。
- * 這裡把它搬到 branch_contacts，每家分行一筆，再移除舊欄位避免兩份來源打架。
- */
-const SCHEMA_VERSION = 1
+const hasColumn = (db: Database.Database, table: string, col: string) =>
+  (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(c => c.name === col)
 
-function migrateContactsToBranch(db: Database.Database) {
+/**
+ * 依序套用的 schema 變更。索引 0 對應 user_version 1，以此類推。
+ * 每個步驟都必須可以在「已經是新版」的資料庫上安全地跳過。
+ */
+const MIGRATIONS: ((db: Database.Database) => void)[] = [
+  // v1：聯絡方式原本存在每一筆 exchange_requests 上，同一家分行登記多種信託類型
+  // 時要重複填、也要逐筆改，實際資料裡因此出現同分行「#168」與「168」並存。
+  // 搬到 branch_contacts 每家分行一筆，再移除舊欄位避免兩份來源打架。
+  db => {
+    if (!hasColumn(db, 'exchange_requests', 'contact_info')) return
+
+    // 每家分行取「最新一筆非空」的值；contact_info 與 email 可能來自不同筆申請
+    db.prepare(
+      `INSERT OR IGNORE INTO branch_contacts (branch_code, contact_info, notification_email, updated_at)
+       SELECT e.branch_code,
+         (SELECT contact_info FROM exchange_requests x
+           WHERE x.branch_code = e.branch_code AND TRIM(COALESCE(x.contact_info, '')) != ''
+           ORDER BY x.created_at DESC LIMIT 1),
+         (SELECT notification_email FROM exchange_requests x
+           WHERE x.branch_code = e.branch_code AND TRIM(COALESCE(x.notification_email, '')) != ''
+           ORDER BY x.created_at DESC LIMIT 1),
+         ?
+       FROM exchange_requests e GROUP BY e.branch_code`
+    ).run(new Date().toISOString())
+
+    db.exec('ALTER TABLE exchange_requests DROP COLUMN contact_info')
+    db.exec('ALTER TABLE exchange_requests DROP COLUMN notification_email')
+
+    const n = (db.prepare('SELECT COUNT(*) c FROM branch_contacts').get() as { c: number }).c
+    console.log(`[db] 已將聯絡方式搬遷到 branch_contacts：${n} 家分行`)
+  },
+
+  // v2：新增 customer_count。既有資料一律留 NULL（未填）——
+  // 預設成等於件數等於幫分行宣告一個可能不實的數字，寧可讓畫面提示他們補填。
+  db => {
+    if (hasColumn(db, 'exchange_requests', 'customer_count')) return
+    db.exec('ALTER TABLE exchange_requests ADD COLUMN customer_count INTEGER')
+    console.log('[db] exchange_requests 已新增 customer_count 欄位')
+  },
+]
+
+const SCHEMA_VERSION = MIGRATIONS.length
+
+function migrate(db: Database.Database) {
   // 整段包在 immediate 交易裡：多個行程同時啟動時只有一個拿到寫入鎖，
   // 其餘會等鎖釋放後看到 user_version 已更新而跳過。
   db.transaction(() => {
-    if ((db.pragma('user_version', { simple: true }) as number) >= SCHEMA_VERSION) return
-
-    const cols = db.prepare('PRAGMA table_info(exchange_requests)').all() as { name: string }[]
-    if (cols.some(c => c.name === 'contact_info')) {
-      // 每家分行取「最新一筆非空」的值；contact_info 與 email 可能來自不同筆申請
-      db.prepare(
-        `INSERT OR IGNORE INTO branch_contacts (branch_code, contact_info, notification_email, updated_at)
-         SELECT e.branch_code,
-           (SELECT contact_info FROM exchange_requests x
-             WHERE x.branch_code = e.branch_code AND TRIM(COALESCE(x.contact_info, '')) != ''
-             ORDER BY x.created_at DESC LIMIT 1),
-           (SELECT notification_email FROM exchange_requests x
-             WHERE x.branch_code = e.branch_code AND TRIM(COALESCE(x.notification_email, '')) != ''
-             ORDER BY x.created_at DESC LIMIT 1),
-           ?
-         FROM exchange_requests e GROUP BY e.branch_code`
-      ).run(new Date().toISOString())
-
-      db.exec('ALTER TABLE exchange_requests DROP COLUMN contact_info')
-      db.exec('ALTER TABLE exchange_requests DROP COLUMN notification_email')
-
-      const n = (db.prepare('SELECT COUNT(*) c FROM branch_contacts').get() as { c: number }).c
-      console.log(`[db] 已將聯絡方式搬遷到 branch_contacts：${n} 家分行`)
-    }
-
+    const from = db.pragma('user_version', { simple: true }) as number
+    if (from >= SCHEMA_VERSION) return
+    for (let v = from; v < SCHEMA_VERSION; v++) MIGRATIONS[v](db)
     db.pragma(`user_version = ${SCHEMA_VERSION}`)
   }).immediate()
 }
@@ -105,7 +128,7 @@ function open() {
   // 等待鎖釋放而不是立刻丟 SQLITE_BUSY
   db.pragma('busy_timeout = 5000')
   db.exec(SCHEMA)
-  migrateContactsToBranch(db)
+  migrate(db)
   return db
 }
 
@@ -164,6 +187,33 @@ export function setBranchContact(
     email: notificationEmail?.trim() || null,
     now: nowISO(),
   })
+}
+
+/**
+ * 兩家分行之間、某一信託類型已經交換掉的件數（已確認 ＋ 待確認佔用中）。
+ *
+ * 用途是提醒「同一客戶在同一分行只能計一件」的上限：一筆登記能跟任一家分行
+ * 累計交換的件數，不該超過它的 customer_count。取消掉的配對不算在內。
+ */
+export function exchangedBetween(
+  branchA: string,
+  branchB: string,
+  trustType: TrustTypeValue
+): { confirmed: number; pending: number } {
+  const row = db
+    .prepare(
+      `SELECT
+         COALESCE(SUM(CASE WHEN p.status = 'confirmed' THEN p.proposed_count END), 0) AS confirmed,
+         COALESCE(SUM(CASE WHEN p.status = 'pending'   THEN p.proposed_count END), 0) AS pending
+       FROM match_proposals p
+       JOIN exchange_requests r ON r.id = p.from_request_id
+       WHERE p.status IN ('confirmed', 'pending')
+         AND r.trust_type = @type
+         AND ((p.from_branch_code = @a AND p.to_branch_code = @b)
+           OR (p.from_branch_code = @b AND p.to_branch_code = @a))`
+    )
+    .get({ a: branchA, b: branchB, type: trustType }) as { confirmed: number; pending: number }
+  return row
 }
 
 /** 這筆申請被 pending 提案佔用的件數（含正向與反向） */

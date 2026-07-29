@@ -28,11 +28,27 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ code: stri
   const contact =
     getBranchContact(code) ?? { branch_code: code, contact_info: null, notification_email: null }
 
+  // 與每家分行、每種信託類型已經換掉的件數（已確認＋待確認佔用中）。
+  // 提案畫面用它提醒「同一客戶在同一分行只能計一件」的上限。
+  const exchanged = db
+    .prepare(
+      `SELECT
+         CASE WHEN p.from_branch_code = @me THEN p.to_branch_code ELSE p.from_branch_code END AS branch_code,
+         r.trust_type,
+         SUM(p.proposed_count) AS count
+       FROM match_proposals p
+       JOIN exchange_requests r ON r.id = p.from_request_id
+       WHERE p.status IN ('confirmed', 'pending')
+         AND (p.from_branch_code = @me OR p.to_branch_code = @me)
+       GROUP BY branch_code, r.trust_type`
+    )
+    .all({ me: code }) as { branch_code: string; trust_type: string; count: number }[]
+
   const myRequests = db
     .prepare('SELECT * FROM exchange_requests WHERE branch_code = ? ORDER BY created_at DESC')
     .all(code) as ExchangeRequest[]
 
-  if (myRequests.length === 0) return NextResponse.json({ ...EMPTY, contact })
+  if (myRequests.length === 0) return NextResponse.json({ ...EMPTY, contact, exchanged })
 
   const allIds = myRequests.map(r => r.id)
   // 只用未取消的申請 ID 查詢配對資料，避免已取消的申請帶出舊配對
@@ -50,7 +66,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ code: stri
     .all(...allIds, ...allIds) as MatchProposal[]
 
   if (activeIds.length === 0) {
-    return NextResponse.json({ ...EMPTY, contact, myRequests, pastHistory })
+    return NextResponse.json({ ...EMPTY, contact, exchanged, myRequests, pastHistory })
   }
 
   const ph = placeholders(activeIds.length)
@@ -87,6 +103,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ code: stri
 
   return NextResponse.json({
     contact,
+    exchanged,
     myRequests,
     incomingProposals,
     outgoingProposals,

@@ -9,6 +9,7 @@ import { TRUST_TYPE_LABELS } from '@/lib/types'
 
 type DashboardData = {
   contact: BranchContact
+  exchanged: { branch_code: string; trust_type: string; count: number }[]
   myRequests: ExchangeRequest[]
   incomingProposals: MatchProposal[]
   outgoingProposals: MatchProposal[]
@@ -23,6 +24,7 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
   const [data, setData] = useState<DashboardData | null>(null)
   const [trustType, setTrustType] = useState<TrustType>('disability')
   const [caseCount, setCaseCount] = useState('')
+  const [customerCount, setCustomerCount] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [processingId, setProcessingId] = useState<string | null>(null)
@@ -57,9 +59,11 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
         branch_name: branch!.name,
         trust_type: trustType,
         case_count: parseInt(caseCount),
+        customer_count: customerCount ? parseInt(customerCount) : null,
       }),
     })
     setCaseCount('')
+    setCustomerCount('')
     setSubmitting(false)
     load()
   }
@@ -92,11 +96,11 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
     load()
   }
 
-  async function handleEdit(requestId: string, newCount: number) {
+  async function handleEdit(requestId: string, newCount: number, newCustomers: number | null) {
     const res = await fetch(`/api/request/${requestId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ case_count: newCount }),
+      body: JSON.stringify({ case_count: newCount, customer_count: newCustomers }),
     })
     const d = await res.json()
     if (!res.ok) showToast(d.error ?? '編輯失敗')
@@ -149,6 +153,20 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
     m => m.cancel_status === 'pending' && m.cancel_requested_by !== code
   ).length
   const proposalBadge = pendingIn + pendingCancelIn
+
+  /**
+   * 我方與某分行、某信託類型已經換掉的件數。
+   * 後端的 exchanged 已含待確認的提案，所以要扣掉「當前這筆」才不會重複計算。
+   */
+  function exchangedWith(branchCode: string, trustType: string | undefined, excludeProposalId: string) {
+    if (!trustType) return 0
+    const total = data!.exchanged.find(
+      e => e.branch_code === branchCode && e.trust_type === trustType
+    )?.count ?? 0
+    const self = [...data!.incomingProposals, ...data!.outgoingProposals]
+      .find(p => p.id === excludeProposalId)?.proposed_count ?? 0
+    return Math.max(0, total - self)
+  }
 
   const totalRequested = activeRequests.reduce((s, r) => s + r.requested_count, 0)
   const totalMatched = activeRequests.reduce((s, r) => s + (r.requested_count - r.remaining_count), 0)
@@ -239,6 +257,7 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
             <RegisterForm
               trustType={trustType} setTrustType={setTrustType}
               caseCount={caseCount} setCaseCount={setCaseCount}
+              customerCount={customerCount} setCustomerCount={setCustomerCount}
               submitting={submitting} onSubmit={async e => { await handleSubmit(e); setShowForm(false) }}
             />
           </div>
@@ -331,7 +350,9 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
                   <>
                     <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mt-2 px-1">收到的配對邀請</p>
                     {data.incomingProposals.map(p => (
-                      <ProposalCard key={p.id} proposal={p} incoming onAction={handleProposal} processingId={processingId} />
+                      <ProposalCard key={p.id} proposal={p} incoming onAction={handleProposal} processingId={processingId}
+                        myRequest={data.myRequests.find(r => r.id === p.to_request_id)}
+                        alreadyExchanged={exchangedWith(p.from_branch_code, data.myRequests.find(r => r.id === p.to_request_id)?.trust_type, p.id)} />
                     ))}
                   </>
                 )}
@@ -340,7 +361,9 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
                   <>
                     <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mt-4 px-1">我送出的邀請</p>
                     {data.outgoingProposals.map(p => (
-                      <ProposalCard key={p.id} proposal={p} incoming={false} onAction={handleProposal} processingId={processingId} />
+                      <ProposalCard key={p.id} proposal={p} incoming={false} onAction={handleProposal} processingId={processingId}
+                        myRequest={data.myRequests.find(r => r.id === p.from_request_id)}
+                        alreadyExchanged={exchangedWith(p.to_branch_code, data.myRequests.find(r => r.id === p.from_request_id)?.trust_type, p.id)} />
                     ))}
                   </>
                 )}
@@ -406,19 +429,20 @@ function RequestCard({
   request: ExchangeRequest
   confirmedMatches: MatchProposal[]
   myCode: string
-  onEdit: (id: string, count: number) => void
+  onEdit: (id: string, count: number, customers: number | null) => void
   onCancel: (id: string) => void
   onCancelRequest: (matchId: string) => void
   onCancelConfirm: (matchId: string, action: 'approve' | 'reject' | 'withdraw') => void
 }) {
   const [editing, setEditing] = useState(false)
   const [editCount, setEditCount] = useState(String(request.requested_count))
+  const [editCustomers, setEditCustomers] = useState(request.customer_count?.toString() ?? '')
   const isWaiting = request.status === 'waiting'
   const matchedCount = request.requested_count - request.remaining_count
   const pct = request.requested_count > 0 ? Math.round((matchedCount / request.requested_count) * 100) : 0
 
   function saveEdit() {
-    onEdit(request.id, parseInt(editCount))
+    onEdit(request.id, parseInt(editCount), editCustomers ? parseInt(editCustomers) : null)
     setEditing(false)
   }
 
@@ -565,19 +589,46 @@ function RequestCard({
           {matchedCount > 0 && (
             <p className="text-xs font-semibold text-gray-500 mb-2">剩餘 {request.remaining_count} 件待配對</p>
           )}
+          {!editing && (
+            request.customer_count !== null ? (
+              <p className="text-xs text-gray-500 mb-2">
+                來自 <b className="text-gray-700">{request.customer_count}</b> 位不同客戶
+                <span className="text-gray-400">：跟每一家分行最多換 {request.customer_count} 件</span>
+              </p>
+            ) : (
+              <button onClick={() => setEditing(true)}
+                className="w-full text-left mb-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 hover:bg-amber-100 transition-colors">
+                <p className="text-xs text-amber-800 font-bold">尚未填「來自幾位不同客戶」</p>
+                <p className="text-xs text-amber-700 mt-0.5">
+                  同一位客戶在同一家分行只能計一件，填了系統才能在配對超量時提醒你 →
+                </p>
+              </button>
+            )
+          )}
           {editing ? (
             <div className="space-y-2">
-              <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1 block">總件數</label>
-                <input
-                  type="number" min={1} value={editCount}
-                  onChange={e => setEditCount(e.target.value)}
-                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:border-blue-500"
-                />
-                <p className="text-xs text-gray-400 mt-1.5">
-                  聯絡方式請改上方的「分行聯絡方式」，三種信託類型共用一份
-                </p>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="text-xs font-semibold text-gray-600 mb-1 block">總件數</label>
+                  <input
+                    type="number" min={1} value={editCount}
+                    onChange={e => setEditCount(e.target.value)}
+                    className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs font-semibold text-gray-600 mb-1 block">不同客戶數</label>
+                  <input
+                    type="number" min={1} max={editCount || undefined} value={editCustomers}
+                    onChange={e => setEditCustomers(e.target.value)}
+                    placeholder="選填"
+                    className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
               </div>
+              <p className="text-xs text-gray-400">
+                客戶數＝跟每一家分行最多能換幾件。聯絡方式請改上方的「分行聯絡方式」。
+              </p>
               <div className="flex gap-2">
                 <button onClick={() => setEditing(false)}
                   className="flex-1 bg-gray-100 text-gray-600 py-2 rounded-xl text-sm font-semibold">取消</button>
@@ -610,15 +661,26 @@ function RequestCard({
   )
 }
 
-function ProposalCard({ proposal, incoming, onAction, processingId }: {
+function ProposalCard({ proposal, incoming, onAction, processingId, myRequest, alreadyExchanged }: {
   proposal: MatchProposal
   incoming: boolean
   onAction: (id: string, action: 'confirm' | 'reject') => void
   processingId: string | null
+  /** 我方被提案的那筆登記，用來取 customer_count */
+  myRequest?: ExchangeRequest
+  /** 我方與對方分行、此信託類型已經換掉的件數（不含這筆提案） */
+  alreadyExchanged: number
 }) {
   const other = incoming ? proposal.from_branch_name : proposal.to_branch_name
   const otherCode = incoming ? proposal.from_branch_code : proposal.to_branch_code
   const isProcessing = processingId === proposal.id
+
+  // 同一客戶在同一分行只能計一件，所以跟同一家分行累計交換的件數不該超過客戶數。
+  // 客戶數是分行自填、系統無從查證，因此只提醒不阻擋。
+  const cap = myRequest?.customer_count ?? null
+  const total = alreadyExchanged + proposal.proposed_count
+  const overCap = cap !== null && total > cap
+
   return (
     <div className="p-4 bg-blue-50 border border-blue-100 rounded-2xl">
       <div className="flex justify-between items-start gap-3">
@@ -647,6 +709,32 @@ function ProposalCard({ proposal, incoming, onAction, processingId }: {
           <span className="text-xs text-blue-600 bg-blue-100 px-3 py-1.5 rounded-full shrink-0 font-semibold">等待確認</span>
         )}
       </div>
+
+      {alreadyExchanged > 0 && (
+        <p className="text-xs text-gray-500 mt-2 pt-2 border-t border-blue-100">
+          你已與 {other} 交換過 <b className="text-gray-700">{alreadyExchanged} 件</b>
+          {myRequest && `〈${TRUST_TYPE_LABELS[myRequest.trust_type]}〉`}
+          {cap !== null && `，加上這筆共 ${total} 件`}
+        </p>
+      )}
+
+      {overCap && (
+        <div className="mt-2 rounded-xl bg-amber-50 border border-amber-200 p-2.5">
+          <p className="text-xs text-amber-800 font-bold">
+            ⚠️ 超過你登記的 {cap} 位客戶上限
+          </p>
+          <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">
+            同一位客戶在 {other} 只能計一件，你回給對方的 {total} 件中，
+            對方可能只算得到 {cap} 件。確認前請先確定這些件數來自不同客戶。
+          </p>
+        </div>
+      )}
+
+      {incoming && cap === null && (
+        <p className="text-xs text-gray-400 mt-2 pt-2 border-t border-blue-100">
+          這筆登記還沒填「來自幾位不同客戶」，系統無法提醒客戶重複的風險
+        </p>
+      )}
     </div>
   )
 }
@@ -781,11 +869,13 @@ function ContactCard({ contact, onSave }: {
   )
 }
 
-function RegisterForm({ trustType, setTrustType, caseCount, setCaseCount, submitting, onSubmit }: {
+function RegisterForm({ trustType, setTrustType, caseCount, setCaseCount, customerCount, setCustomerCount, submitting, onSubmit }: {
   trustType: TrustType
   setTrustType: (v: TrustType) => void
   caseCount: string
   setCaseCount: (v: string) => void
+  customerCount: string
+  setCustomerCount: (v: string) => void
   submitting: boolean
   onSubmit: (e: React.FormEvent) => void
 }) {
@@ -820,6 +910,22 @@ function RegisterForm({ trustType, setTrustType, caseCount, setCaseCount, submit
           placeholder="例：3"
           className="w-full border-2 border-gray-100 rounded-2xl px-4 py-3 text-gray-900 placeholder-gray-300 focus:outline-none focus:border-blue-500 bg-gray-50 focus:bg-white transition-colors text-lg font-bold"
         />
+      </div>
+      <div>
+        <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+          來自幾位不同客戶 <span className="text-gray-400 font-normal">（選填）</span>
+        </label>
+        <input
+          type="number" min={1} max={caseCount || undefined}
+          value={customerCount}
+          onChange={e => setCustomerCount(e.target.value)}
+          placeholder={caseCount ? `最多 ${caseCount}` : '例：2'}
+          className="w-full border-2 border-gray-100 rounded-2xl px-4 py-3 text-gray-900 placeholder-gray-300 focus:outline-none focus:border-blue-500 bg-gray-50 focus:bg-white transition-colors"
+        />
+        <p className="text-xs text-gray-400 mt-1.5">
+          同一位客戶在同一家分行只能計一件，所以這個數字＝跟每一家分行最多能換幾件。
+          例如 5 件都是同一位客戶簽的，就要填 1，代表得拆給 5 家不同分行。
+        </p>
       </div>
       <button
         type="submit" disabled={submitting}

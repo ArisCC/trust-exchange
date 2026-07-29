@@ -24,6 +24,8 @@ export type ExchangeRequest = {
   trust_type: TrustType
   requested_count: number
   remaining_count: number
+  /** 這些件數來自幾位不同客戶；即與任一分行累計可交換的上限。null = 未填 */
+  customer_count: number | null
   status: 'waiting' | 'completed' | 'cancelled'
   created_at: string
   updated_at: string

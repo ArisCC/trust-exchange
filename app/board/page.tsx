@@ -273,12 +273,6 @@ function BoardContent() {
         )}
       </div>
 
-      {/* Toast */}
-      {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white text-sm px-5 py-3 rounded-full shadow-xl">
-          {toast}
-        </div>
-      )}
 
       <div className="max-w-lg mx-auto p-4 space-y-3">
         {/* 信託類型 tabs */}
@@ -376,6 +370,13 @@ function BoardContent() {
       </div>
 
       </div>
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white text-sm px-5 py-3 rounded-full shadow-xl">
+          {toast}
+        </div>
+      )}
 
       {/* 配對 Modal */}
       {target && (

@@ -477,12 +477,6 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
         )}
       </div>
 
-      {/* Toast */}
-      {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white text-sm px-5 py-3 rounded-full shadow-xl">
-          {toast}
-        </div>
-      )}
 
       <div className="max-w-lg mx-auto px-4 -mt-1 pb-8 space-y-4">
 
@@ -495,6 +489,13 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
         {tabsBlock}
       </div>
       </div>
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white text-sm px-5 py-3 rounded-full shadow-xl">
+          {toast}
+        </div>
+      )}
     </main>
   )
 }

@@ -87,6 +87,9 @@ function BoardContent() {
     setTimeout(() => setToast(''), 3000)
   }
 
+  /** 對方真正能交換的件數＝剩餘扣掉已被其他分行待確認提案佔住的部分 */
+  const availableOf = (r: ExchangeRequest) => r.remaining_count - (r.pending_count ?? 0)
+
   const byType = requests.filter(r => (r.trust_type ?? 'disability') === trustType)
   const filtered = region
     ? byType.filter(r => findBranch(r.branch_code)?.region === region)
@@ -97,7 +100,7 @@ function BoardContent() {
     : myRequests
   const selectedMyReq = myMatchingRequests.find(r => r.id === selectedMyReqId)
   const maxCount = target && selectedMyReq
-    ? Math.min(target.remaining_count, selectedMyReq.remaining_count)
+    ? Math.min(availableOf(target), selectedMyReq.remaining_count)
     : 1
 
   return (
@@ -179,7 +182,7 @@ function BoardContent() {
             <div className="grid grid-cols-2 xl:grid-cols-3 gap-4 items-start">
               {filtered.map(r => {
                 const branch = findBranch(r.branch_code)
-                const canPropose = myBranch && myRequests.some(q => (q.trust_type ?? 'disability') === (r.trust_type ?? 'disability'))
+                const canPropose = myBranch && availableOf(r) > 0 && myRequests.some(q => (q.trust_type ?? 'disability') === (r.trust_type ?? 'disability'))
                 const matched = matchedBranchCounts.get(r.branch_code)
                 return (
                   <div key={r.id}
@@ -209,8 +212,11 @@ function BoardContent() {
 
                     <div className="shrink-0 flex flex-col items-center gap-2.5 pl-4 border-l border-slate-100">
                       <p className="leading-none text-center">
-                        <span className="text-4xl font-black text-blue-600 tabular-nums">{r.remaining_count}</span>
-                        <span className="block text-[11px] text-slate-400 mt-1.5">件待交換</span>
+                        <span className="text-4xl font-black text-blue-600 tabular-nums">{availableOf(r)}</span>
+                        <span className="block text-[11px] text-slate-400 mt-1.5">件可交換</span>
+                        {(r.pending_count ?? 0) > 0 && (
+                          <span className="block text-[11px] text-amber-600 mt-1">另 {r.pending_count} 件洽談中</span>
+                        )}
                       </p>
                       {canPropose ? (
                         <button onClick={() => openPropose(r)}
@@ -220,6 +226,8 @@ function BoardContent() {
                         </button>
                       ) : !myBranch ? (
                         <Link href="/" className="text-xs text-blue-600 hover:underline whitespace-nowrap">登入後配對</Link>
+                      ) : availableOf(r) === 0 ? (
+                        <span className="text-xs text-slate-400 whitespace-nowrap">全部洽談中</span>
                       ) : (
                         <Link href={`/branch/${myCode}`} className="text-xs text-amber-600 hover:underline whitespace-nowrap">先登記件數</Link>
                       )}
@@ -316,7 +324,7 @@ function BoardContent() {
         <div className="space-y-3">
         {filtered.map(r => {
           const branch = findBranch(r.branch_code)
-          const canPropose = myBranch && myRequests.some(req => (req.trust_type ?? 'disability') === (r.trust_type ?? 'disability'))
+          const canPropose = myBranch && availableOf(r) > 0 && myRequests.some(req => (req.trust_type ?? 'disability') === (r.trust_type ?? 'disability'))
           return (
             <div key={r.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center justify-between gap-4 hover:shadow-md transition-shadow">
               <div className="flex-1 min-w-0">
@@ -331,8 +339,11 @@ function BoardContent() {
                   )}
                 </div>
                 <div className="flex items-baseline gap-1.5 mt-1">
-                  <span className="text-3xl font-black text-blue-600">{r.remaining_count}</span>
-                  <span className="text-gray-400 text-sm">件待交換</span>
+                  <span className="text-3xl font-black text-blue-600">{availableOf(r)}</span>
+                  <span className="text-gray-400 text-sm">件可交換</span>
+                  {(r.pending_count ?? 0) > 0 && (
+                    <span className="text-xs text-amber-600">・另 {r.pending_count} 件洽談中</span>
+                  )}
                 </div>
                 {r.contact_info && (
                   <p className="text-xs text-gray-500 mt-1.5 flex items-center gap-1">
@@ -355,6 +366,8 @@ function BoardContent() {
                       <Link href="/" className="block text-xs text-blue-600 hover:underline text-center leading-relaxed">
                         登入<br />後配對
                       </Link>
+                    ) : availableOf(r) === 0 ? (
+                      <span className="block text-xs text-gray-400 text-center leading-relaxed">全部<br />洽談中</span>
                     ) : (
                       <Link href={`/branch/${myCode}`} className="block text-xs text-amber-600 hover:underline text-center leading-relaxed">
                         先登記<br />件數
@@ -387,7 +400,7 @@ function BoardContent() {
               <p className="font-bold text-xl">{target.branch_name}</p>
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-blue-300 text-sm">對方剩餘</span>
-                <span className="text-white font-bold">{target.remaining_count} 件</span>
+                <span className="text-white font-bold">{availableOf(target)} 件</span>
               </div>
             </div>
 
@@ -401,7 +414,7 @@ function BoardContent() {
                         <input type="radio" name="myReq" value={r.id} checked={selectedMyReqId === r.id}
                           onChange={() => {
                             setSelectedMyReqId(r.id)
-                            setProposeCount(Math.min(target.remaining_count, r.remaining_count))
+                            setProposeCount(Math.min(availableOf(target), r.remaining_count))
                           }} className="accent-blue-600" />
                         <span className="text-sm font-semibold text-gray-800">剩餘 {r.remaining_count} 件</span>
                         {r.contact_info && <span className="text-xs text-gray-400">{r.contact_info}</span>}

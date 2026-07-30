@@ -31,6 +31,8 @@ export type ExchangeRequest = {
   updated_at: string
   /** 由 branch_contacts JOIN 進來，方便看板直接顯示 */
   contact_info?: string | null
+  /** 已被待確認提案佔住的件數；看板用它算出真正可交換的數量 */
+  pending_count?: number
 }
 
 export type MatchProposal = {

@@ -102,6 +102,138 @@ function BoardContent() {
 
   return (
     <main className="min-h-screen bg-slate-50">
+
+      {/* ── 桌機：篩選是工具列不是側欄；清單佔滿寬度並拉出資訊層次 ── */}
+      <div className="hidden lg:block min-h-screen bg-slate-100">
+        <header className="shadow-lg" style={{ background: 'linear-gradient(135deg, #0f1f3d 0%, #1e3a7a 100%)' }}>
+          <div className="max-w-[1400px] mx-auto px-10 pt-6 pb-5 flex items-start justify-between">
+            <div className="flex items-center gap-4">
+              <span className="w-11 h-11 rounded-2xl grid place-items-center shadow-md shrink-0"
+                style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)' }}>
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                </svg>
+              </span>
+              <div>
+                <h1 className="text-2xl font-black text-white tracking-tight leading-tight">配對媒合</h1>
+                <p className="text-blue-300 text-sm mt-0.5">共 {requests.length} 筆等待配對</p>
+              </div>
+            </div>
+            {myBranch ? (
+              <Link href={`/branch/${myCode}`}
+                className="flex items-center gap-3 text-white px-4 py-2.5 rounded-xl border border-white/20 bg-white/10 hover:bg-white/20 transition-colors">
+                <span className="font-mono text-xs text-blue-200">{myCode}</span>
+                <span className="text-sm font-medium">{myBranch.name}</span>
+                {myRequests.length > 0 && (
+                  <span className="text-xs bg-blue-500 px-2 py-0.5 rounded-full font-bold">
+                    可配對 {myRequests.reduce((n, r) => n + r.remaining_count, 0)} 件
+                  </span>
+                )}
+              </Link>
+            ) : (
+              <Link href="/" className="text-sm text-blue-300 hover:text-white transition-colors">登入分行</Link>
+            )}
+          </div>
+
+          {/* 信託類型：橫向工具列，不佔側欄 */}
+          <div className="max-w-[1400px] mx-auto px-10 flex gap-1">
+            {(Object.entries(TRUST_TYPE_LABELS) as [TrustType, string][]).map(([type, label]) => {
+              const count = requests.filter(r => (r.trust_type ?? 'disability') === type).length
+              const on = trustType === type
+              return (
+                <button key={type} onClick={() => { setTrustType(type); setRegion('') }}
+                  className={`px-5 py-2.5 rounded-t-xl text-sm transition-all ${
+                    on ? 'bg-slate-100 text-blue-700 font-bold' : 'text-blue-200 hover:text-white hover:bg-white/10'}`}>
+                  {label}
+                  <span className={`ml-2 text-xs tabular-nums ${on ? 'text-blue-400' : 'text-blue-300/70'}`}>{count}</span>
+                </button>
+              )
+            })}
+          </div>
+        </header>
+
+        <div className="max-w-[1400px] mx-auto px-10 py-6">
+          {/* 地區：次級篩選，貼齊清單上緣 */}
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-xs text-slate-400 mr-1">地區</span>
+            {[{ k: '', label: '全部', n: byType.length },
+              ...REGIONS.map(r => ({ k: r, label: r, n: byType.filter(q => findBranch(q.branch_code)?.region === r).length }))]
+              .filter(o => o.k === '' || o.n > 0)
+              .map(o => (
+                <button key={o.k || 'all'} onClick={() => setRegion(o.k as Region | '')}
+                  className={`px-3.5 py-1.5 rounded-full text-sm transition-all ${
+                    region === o.k
+                      ? 'bg-blue-600 text-white font-semibold shadow-sm'
+                      : 'bg-white text-slate-600 border border-slate-200 hover:border-blue-300'}`}>
+                  {o.label} <span className="text-xs opacity-70 tabular-nums">{o.n}</span>
+                </button>
+              ))}
+          </div>
+
+          {filtered.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200/70 py-24 text-center shadow-sm">
+              <p className="text-slate-400 text-sm">目前無等待中的申請</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 xl:grid-cols-3 gap-4 items-start">
+              {filtered.map(r => {
+                const branch = findBranch(r.branch_code)
+                const canPropose = myBranch && myRequests.some(q => (q.trust_type ?? 'disability') === (r.trust_type ?? 'disability'))
+                const matched = matchedBranchCounts.get(r.branch_code)
+                return (
+                  <div key={r.id}
+                    className="group bg-white rounded-2xl border border-slate-200/70 shadow-sm hover:shadow-xl hover:border-blue-300
+                               transition-all p-5 flex items-center gap-5">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded-lg shrink-0">
+                          {r.branch_code}
+                        </span>
+                        <span className="font-bold text-slate-900 text-base truncate">{r.branch_name}</span>
+                        {branch?.region && (
+                          <span className="text-[11px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full shrink-0">{branch.region}</span>
+                        )}
+                      </div>
+                      {matched && (
+                        <span className="inline-block text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-semibold mb-2">
+                          已與你配對 {matched} 件
+                        </span>
+                      )}
+                      <p className="text-xs text-slate-400">
+                        {r.contact_info && <span className="text-slate-500">📞 {r.contact_info}</span>}
+                        {r.contact_info && <span className="mx-1.5 text-slate-300">·</span>}
+                        {new Date(r.created_at).toLocaleDateString('zh-TW')} 登記
+                      </p>
+                    </div>
+
+                    <div className="shrink-0 flex flex-col items-center gap-2.5 pl-4 border-l border-slate-100">
+                      <p className="leading-none text-center">
+                        <span className="text-4xl font-black text-blue-600 tabular-nums">{r.remaining_count}</span>
+                        <span className="block text-[11px] text-slate-400 mt-1.5">件待交換</span>
+                      </p>
+                      {canPropose ? (
+                        <button onClick={() => openPropose(r)}
+                          className="text-white font-bold px-4 py-2 rounded-xl text-sm whitespace-nowrap shadow-sm hover:shadow-md transition-all active:scale-95"
+                          style={{ background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)' }}>
+                          邀請配對
+                        </button>
+                      ) : !myBranch ? (
+                        <Link href="/" className="text-xs text-blue-600 hover:underline whitespace-nowrap">登入後配對</Link>
+                      ) : (
+                        <Link href={`/branch/${myCode}`} className="text-xs text-amber-600 hover:underline whitespace-nowrap">先登記件數</Link>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── 手機版（以下維持原樣） ── */}
+      <div className="lg:hidden">
       {/* Header */}
       <div className="sticky top-0 z-10 shadow-md"
         style={{ background: 'linear-gradient(135deg, #0f1f3d 0%, #1e3a7a 100%)' }}>
@@ -186,6 +318,8 @@ function BoardContent() {
             <p className="text-gray-400 text-sm">目前無等待中的申請</p>
           </div>
         )}
+
+        <div className="space-y-3">
         {filtered.map(r => {
           const branch = findBranch(r.branch_code)
           const canPropose = myBranch && myRequests.some(req => (req.trust_type ?? 'disability') === (r.trust_type ?? 'disability'))
@@ -238,6 +372,9 @@ function BoardContent() {
             </div>
           )
         })}
+        </div>
+      </div>
+
       </div>
 
       {/* 配對 Modal */}

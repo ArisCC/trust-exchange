@@ -50,7 +50,7 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-4 gap-8 relative overflow-hidden"
+    <main className="min-h-screen flex flex-col items-center justify-center p-4 gap-8 lg:gap-10 relative overflow-hidden"
       style={{ background: 'linear-gradient(135deg, #0f1f3d 0%, #0a2a6e 50%, #0f1f3d 100%)' }}>
 
       {/* Background decoration */}
@@ -63,38 +63,38 @@ export default function Home() {
 
       {/* Logo & Title */}
       <div className="text-center relative">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4 shadow-lg"
+        <div className="inline-flex items-center justify-center w-16 h-16 lg:w-20 lg:h-20 rounded-2xl lg:rounded-3xl mb-4 lg:mb-6 shadow-lg"
           style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)' }}>
-          <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-8 h-8 lg:w-10 lg:h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
               d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
           </svg>
         </div>
-        <h1 className="text-3xl font-bold text-white tracking-tight">信託案件交換平台</h1>
-        <p className="text-blue-300 mt-1.5 text-sm">提供身心障礙信託、一般預開信託及安養信託案件交換媒合</p>
+        <h1 className="text-3xl lg:text-5xl font-bold text-white tracking-tight">信託案件交換平台</h1>
+        <p className="text-blue-300 mt-1.5 lg:mt-3 text-sm lg:text-lg">提供身心障礙信託、一般預開信託及安養信託案件交換媒合</p>
       </div>
 
       {/* Steps */}
-      <div className="flex gap-3 w-full max-w-lg">
+      <div className="flex gap-3 lg:gap-4 w-full max-w-lg lg:max-w-xl order-none lg:order-last">
         {[
           { step: '1', text: '輸入分行代號進入主頁' },
           { step: '2', text: '登記想交換的件數' },
           { step: '3', text: '到配對媒合頁找其他分行' },
         ].map(s => (
-          <div key={s.step} className="flex-1 rounded-2xl px-3 py-4 text-center border border-white/10"
+          <div key={s.step} className="flex-1 rounded-2xl px-3 py-4 lg:px-4 lg:py-5 text-center border border-white/10"
             style={{ background: 'rgba(255,255,255,0.07)', backdropFilter: 'blur(10px)' }}>
             <div className="w-7 h-7 rounded-full text-sm font-bold flex items-center justify-center mx-auto mb-2 text-white"
               style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #6366f1 100%)' }}>
               {s.step}
             </div>
-            <p className="text-xs text-blue-100 leading-tight">{s.text}</p>
+            <p className="text-xs lg:text-sm text-blue-100 leading-tight">{s.text}</p>
           </div>
         ))}
       </div>
 
       {/* Login card */}
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-8">
-        <label className="block text-sm font-semibold text-gray-700 mb-2">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg lg:max-w-xl p-8 lg:p-10">
+        <label className="block text-sm lg:text-base font-semibold text-gray-700 mb-2 lg:mb-3">
           分行代號或名稱
         </label>
         <div ref={containerRef} className="relative">
@@ -107,7 +107,7 @@ export default function Home() {
             placeholder="輸入代號（如 005）或分行名稱（如 台北）"
             maxLength={20}
             autoComplete="off"
-            className="w-full border-2 border-gray-100 rounded-2xl px-4 py-3.5 text-gray-900 placeholder-gray-300 focus:outline-none focus:border-blue-500 text-base bg-gray-50 focus:bg-white transition-colors"
+            className="w-full border-2 border-gray-100 rounded-2xl px-4 py-3.5 lg:px-5 lg:py-4 text-gray-900 placeholder-gray-300 focus:outline-none focus:border-blue-500 text-base lg:text-lg bg-gray-50 focus:bg-white transition-colors"
           />
 
           {showDropdown && (
@@ -140,7 +140,7 @@ export default function Home() {
         <button
           onClick={handleEnter}
           disabled={!selected}
-          className="mt-4 w-full text-white font-bold py-3.5 rounded-2xl transition-all text-base disabled:opacity-40 disabled:cursor-not-allowed"
+          className="mt-4 lg:mt-5 w-full text-white font-bold py-3.5 lg:py-4 rounded-2xl transition-all text-base lg:text-lg disabled:opacity-40 disabled:cursor-not-allowed"
           style={{ background: selected ? 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)' : '#e5e7eb', color: selected ? 'white' : '#9ca3af' }}
         >
           {selected ? `進入 ${selected.name} →` : '請先選擇分行'}

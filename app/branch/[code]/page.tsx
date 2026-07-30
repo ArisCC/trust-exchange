@@ -172,46 +172,9 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
   const totalMatched = activeRequests.reduce((s, r) => s + (r.requested_count - r.remaining_count), 0)
   const totalRemaining = activeRequests.reduce((s, r) => s + r.remaining_count, 0)
 
-  return (
-    <main className="min-h-screen bg-slate-50">
-      {/* Header */}
-      <div className="text-white pb-6" style={{ background: 'linear-gradient(135deg, #0f1f3d 0%, #1e3a7a 100%)' }}>
-        <div className="max-w-lg mx-auto px-4 pt-4 flex items-start justify-between">
-          <div>
-            <p className="text-blue-300 text-xs font-medium">代號 {code}・{branch.region}</p>
-            <h1 className="text-2xl font-black text-white mt-0.5 tracking-tight">{branch.name}</h1>
-          </div>
-          <Link href="/" className="text-blue-300 hover:text-white text-sm transition-colors mt-1">← 返回</Link>
-        </div>
-
-        {/* Stats bar */}
-        {activeRequests.length > 0 && (
-          <div className="max-w-lg mx-auto px-4 mt-5 grid grid-cols-3 gap-3">
-            <div className="rounded-2xl px-3 py-3 text-center" style={{ background: 'rgba(255,255,255,0.1)' }}>
-              <p className="text-2xl font-black text-white">{totalRequested}</p>
-              <p className="text-blue-300 text-xs mt-0.5">登記件數</p>
-            </div>
-            <div className="rounded-2xl px-3 py-3 text-center" style={{ background: 'rgba(16,185,129,0.2)' }}>
-              <p className="text-2xl font-black text-emerald-300">{totalMatched}</p>
-              <p className="text-emerald-400 text-xs mt-0.5">已配對</p>
-            </div>
-            <div className="rounded-2xl px-3 py-3 text-center" style={{ background: 'rgba(245,158,11,0.2)' }}>
-              <p className="text-2xl font-black text-amber-300">{totalRemaining}</p>
-              <p className="text-amber-400 text-xs mt-0.5">待配對</p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Toast */}
-      {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white text-sm px-5 py-3 rounded-full shadow-xl">
-          {toast}
-        </div>
-      )}
-
-      <div className="max-w-lg mx-auto px-4 -mt-1 pb-8 space-y-4">
-
+  // 兩套版面（手機／桌機）共用同一份內容，避免維護兩份
+  const stepGuide = (
+    <>
         {/* 步驟引導 */}
         {waitingRequests.length > 0 ? (
           <div className="bg-white rounded-2xl shadow-sm border border-emerald-100 p-4 flex items-center justify-between gap-3">
@@ -239,10 +202,10 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
             <p className="text-gray-500 text-xs mt-0.5">登記後，再去配對媒合找其他分行配對</p>
           </div>
         )}
-
-        {/* 分行聯絡方式：整個分行共用一份，不隨信託類型重複填 */}
-        <ContactCard contact={data.contact} onSave={handleSaveContact} />
-
+    </>
+  )
+  const registerBlock = (
+    <>
         {/* 登記表單 */}
         {activeRequests.length === 0 || showForm ? (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
@@ -268,7 +231,10 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
             ＋ 新增另一類型申請
           </button>
         )}
-
+    </>
+  )
+  const tabsBlock = (
+    <>
         {/* Tabs */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="flex border-b border-gray-100">
@@ -418,6 +384,116 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
             )}
           </div>
         </div>
+    </>
+  )
+
+  return (
+    <main className="min-h-screen bg-slate-50">
+
+      {/* ── 桌機：以「頁首資訊帶 + 橫向操作條 + 主清單」組織，不做左右切割 ── */}
+      <div className="hidden lg:block min-h-screen bg-slate-100">
+        <header className="shadow-lg" style={{ background: 'linear-gradient(135deg, #0f1f3d 0%, #1e3a7a 100%)' }}>
+          <div className="max-w-[1200px] mx-auto px-10 pt-6 pb-7">
+            <div className="flex items-start justify-between mb-6">
+              <div className="flex items-center gap-4">
+                <Link href="/" className="w-11 h-11 rounded-2xl grid place-items-center shadow-md shrink-0"
+                  style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)' }}>
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                  </svg>
+                </Link>
+                <div>
+                  <p className="text-blue-300 text-xs font-medium">代號 {code}・{branch.region}</p>
+                  <h1 className="text-3xl font-black text-white tracking-tight leading-tight">{branch.name}</h1>
+                </div>
+              </div>
+              {waitingRequests.length > 0 && (
+                <Link href={`/board?from=${code}`}
+                  className="text-white font-bold px-5 py-3 rounded-xl shadow-md transition-all active:scale-95"
+                  style={{ background: 'linear-gradient(135deg, #059669 0%, #047857 100%)' }}>
+                  去配對媒合找分行 →
+                </Link>
+              )}
+            </div>
+
+            {/* 統計橫向鋪滿頁首 */}
+            {activeRequests.length > 0 && (
+              <div className="grid grid-cols-3 gap-4">
+                {[
+                  { n: totalRequested, label: '登記件數', c: 'text-white', bg: 'rgba(255,255,255,0.1)' },
+                  { n: totalMatched, label: '已配對', c: 'text-emerald-300', bg: 'rgba(16,185,129,0.18)' },
+                  { n: totalRemaining, label: '待配對', c: 'text-amber-300', bg: 'rgba(245,158,11,0.18)' },
+                ].map(x => (
+                  <div key={x.label} className="rounded-2xl px-5 py-4 flex items-baseline gap-3" style={{ background: x.bg }}>
+                    <span className={`text-4xl font-black tabular-nums ${x.c}`}>{x.n}</span>
+                    <span className="text-sm text-blue-200">{x.label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </header>
+
+        <div className="max-w-[1200px] mx-auto px-10 py-6 space-y-4">
+          {/* 聯絡方式與新增：橫向操作條 */}
+          <div className="grid grid-cols-[1fr_auto] gap-4 items-stretch">
+            <ContactCard contact={data.contact} onSave={handleSaveContact} />
+            <div className="flex">{registerBlock}</div>
+          </div>
+
+          {tabsBlock}
+        </div>
+      </div>
+
+      {/* ── 手機版（以下維持原樣） ── */}
+      <div className="lg:hidden">
+      {/* Header */}
+      <div className="text-white pb-6" style={{ background: 'linear-gradient(135deg, #0f1f3d 0%, #1e3a7a 100%)' }}>
+        <div className="max-w-lg mx-auto px-4 pt-4 flex items-start justify-between">
+          <div>
+            <p className="text-blue-300 text-xs font-medium">代號 {code}・{branch.region}</p>
+            <h1 className="text-2xl font-black text-white mt-0.5 tracking-tight">{branch.name}</h1>
+          </div>
+          <Link href="/" className="text-blue-300 hover:text-white text-sm transition-colors mt-1">← 返回</Link>
+        </div>
+
+        {/* Stats bar */}
+        {activeRequests.length > 0 && (
+          <div className="max-w-lg mx-auto px-4 mt-5 grid grid-cols-3 gap-3">
+            <div className="rounded-2xl px-3 py-3 text-center" style={{ background: 'rgba(255,255,255,0.1)' }}>
+              <p className="text-2xl font-black text-white">{totalRequested}</p>
+              <p className="text-blue-300 text-xs mt-0.5">登記件數</p>
+            </div>
+            <div className="rounded-2xl px-3 py-3 text-center" style={{ background: 'rgba(16,185,129,0.2)' }}>
+              <p className="text-2xl font-black text-emerald-300">{totalMatched}</p>
+              <p className="text-emerald-400 text-xs mt-0.5">已配對</p>
+            </div>
+            <div className="rounded-2xl px-3 py-3 text-center" style={{ background: 'rgba(245,158,11,0.2)' }}>
+              <p className="text-2xl font-black text-amber-300">{totalRemaining}</p>
+              <p className="text-amber-400 text-xs mt-0.5">待配對</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white text-sm px-5 py-3 rounded-full shadow-xl">
+          {toast}
+        </div>
+      )}
+
+      <div className="max-w-lg mx-auto px-4 -mt-1 pb-8 space-y-4">
+
+        {stepGuide}
+
+        <ContactCard contact={data.contact} onSave={handleSaveContact} />
+
+        {registerBlock}
+
+        {tabsBlock}
+      </div>
       </div>
     </main>
   )

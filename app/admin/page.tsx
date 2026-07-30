@@ -63,7 +63,7 @@ export default function AdminPage() {
   return (
     <main className="min-h-screen bg-gray-50">
       <div className="bg-white border-b border-gray-200 px-4 py-4">
-        <div className="max-w-3xl xl:max-w-6xl mx-auto flex items-center justify-between">
+        <div className="max-w-3xl mx-auto flex items-center justify-between">
           <div>
             <h1 className="text-lg font-bold text-gray-800">管理者儀表板</h1>
             <p className="text-xs text-gray-500">身心障礙預開式信託 · 案件交換</p>
@@ -71,7 +71,7 @@ export default function AdminPage() {
           <Link href="/" className="text-sm text-blue-600 hover:underline">← 返回</Link>
         </div>
 
-        <div className="max-w-3xl xl:max-w-6xl mx-auto mt-3 flex gap-1">
+        <div className="max-w-3xl mx-auto mt-3 flex gap-1">
           {([
             { key: 'stats', label: '統計總覽' },
             { key: 'requests', label: '申請管理' },
@@ -88,7 +88,7 @@ export default function AdminPage() {
         </div>
       </div>
 
-      <div className="max-w-3xl xl:max-w-6xl mx-auto p-4">
+      <div className="max-w-3xl mx-auto p-4">
         {tab === 'stats' && <StatsTab />}
         {tab === 'requests' && <RequestsTab />}
         {tab === 'proposals' && <ProposalsTab />}

@@ -176,7 +176,7 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
     <main className="min-h-screen bg-slate-50">
       {/* Header */}
       <div className="text-white pb-6" style={{ background: 'linear-gradient(135deg, #0f1f3d 0%, #1e3a7a 100%)' }}>
-        <div className="max-w-lg lg:max-w-6xl mx-auto px-4 pt-4 flex items-start justify-between">
+        <div className="max-w-lg mx-auto px-4 pt-4 flex items-start justify-between">
           <div>
             <p className="text-blue-300 text-xs font-medium">代號 {code}・{branch.region}</p>
             <h1 className="text-2xl font-black text-white mt-0.5 tracking-tight">{branch.name}</h1>
@@ -186,7 +186,7 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
 
         {/* Stats bar */}
         {activeRequests.length > 0 && (
-          <div className="max-w-lg lg:max-w-6xl mx-auto px-4 mt-5 grid grid-cols-3 gap-3">
+          <div className="max-w-lg mx-auto px-4 mt-5 grid grid-cols-3 gap-3">
             <div className="rounded-2xl px-3 py-3 text-center" style={{ background: 'rgba(255,255,255,0.1)' }}>
               <p className="text-2xl font-black text-white">{totalRequested}</p>
               <p className="text-blue-300 text-xs mt-0.5">登記件數</p>
@@ -210,12 +210,7 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
         </div>
       )}
 
-      <div className="max-w-lg lg:max-w-6xl mx-auto px-4 -mt-1 pb-8
-                      flex flex-col gap-4
-                      lg:grid lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:gap-5 lg:items-start">
-
-        {/* 左欄：登記相關（桌機固定在左側，手機照原本順序堆疊） */}
-        <div className="flex flex-col gap-4">
+      <div className="max-w-lg mx-auto px-4 -mt-1 pb-8 space-y-4">
 
         {/* 步驟引導 */}
         {waitingRequests.length > 0 ? (
@@ -274,9 +269,7 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
           </button>
         )}
 
-        </div>
-
-        {/* 右欄：申請與待處理清單 */}
+        {/* Tabs */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="flex border-b border-gray-100">
             {[

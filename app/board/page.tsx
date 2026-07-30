@@ -105,7 +105,7 @@ function BoardContent() {
       {/* Header */}
       <div className="sticky top-0 z-10 shadow-md"
         style={{ background: 'linear-gradient(135deg, #0f1f3d 0%, #1e3a7a 100%)' }}>
-        <div className="max-w-lg md:max-w-5xl xl:max-w-7xl mx-auto px-4 py-3.5 flex items-center justify-between">
+        <div className="max-w-lg mx-auto px-4 py-3.5 flex items-center justify-between">
           <div>
             <h1 className="font-bold text-white text-base tracking-tight">配對媒合</h1>
             <p className="text-blue-300 text-xs mt-0.5">共 {requests.length} 筆等待配對</p>
@@ -121,7 +121,7 @@ function BoardContent() {
         </div>
 
         {myBranch && myRequests.length > 0 && (
-          <div className="border-t border-white/10 px-4 py-2.5 max-w-lg md:max-w-5xl xl:max-w-7xl mx-auto flex items-center gap-2">
+          <div className="border-t border-white/10 px-4 py-2.5 max-w-lg mx-auto flex items-center gap-2">
             <span className="text-xs text-blue-300">以 <strong className="text-white">{myBranch.name}</strong> 身份瀏覽・可配對件數：</span>
             {myRequests.map(r => (
               <span key={r.id} className="text-xs bg-blue-500 text-white px-2.5 py-0.5 rounded-full font-bold">
@@ -131,7 +131,7 @@ function BoardContent() {
           </div>
         )}
         {myBranch && myRequests.length === 0 && (
-          <div className="border-t border-white/10 px-4 py-2.5 max-w-lg md:max-w-5xl xl:max-w-7xl mx-auto">
+          <div className="border-t border-white/10 px-4 py-2.5 max-w-lg mx-auto">
             <p className="text-xs text-amber-300">
               你目前沒有等待中的申請，
               <Link href={`/branch/${myCode}`} className="font-semibold underline text-amber-200">請先登記件數</Link>
@@ -148,7 +148,7 @@ function BoardContent() {
         </div>
       )}
 
-      <div className="max-w-lg md:max-w-5xl xl:max-w-7xl mx-auto p-4 space-y-3">
+      <div className="max-w-lg mx-auto p-4 space-y-3">
         {/* 信託類型 tabs */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-1.5 flex gap-1">
           {(Object.entries(TRUST_TYPE_LABELS) as [TrustType, string][]).map(([type, label]) => {
@@ -186,8 +186,6 @@ function BoardContent() {
             <p className="text-gray-400 text-sm">目前無等待中的申請</p>
           </div>
         )}
-        {/* 桌機排成多欄，手機維持單欄堆疊 */}
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 items-start">
         {filtered.map(r => {
           const branch = findBranch(r.branch_code)
           const canPropose = myBranch && myRequests.some(req => (req.trust_type ?? 'disability') === (r.trust_type ?? 'disability'))
@@ -240,7 +238,6 @@ function BoardContent() {
             </div>
           )
         })}
-        </div>
       </div>
 
       {/* 配對 Modal */}

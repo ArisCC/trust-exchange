@@ -96,6 +96,23 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
     load()
   }
 
+  async function handleWithdrawProposal(proposalId: string) {
+    if (processingId) return
+    const p = data?.outgoingProposals.find(x => x.id === proposalId)
+    if (p && !confirm(`確定撤回向 ${p.to_branch_name} 送出的 ${p.proposed_count} 件配對邀請？\n\n撤回後這 ${p.proposed_count} 件會立刻釋出，可以改找其他分行。`)) return
+    setProcessingId(proposalId)
+    const res = await fetch(`/api/propose/${proposalId}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ branch_code: code }),
+    })
+    const d = await res.json()
+    if (!res.ok) showToast(d.error ?? '撤回失敗')
+    else showToast(`已撤回，${d.released} 件已釋出`)
+    setProcessingId(null)
+    load()
+  }
+
   async function handleEdit(requestId: string, newCount: number, newCustomers: number | null) {
     const res = await fetch(`/api/request/${requestId}`, {
       method: 'PATCH',
@@ -332,7 +349,7 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
                   <>
                     <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mt-4 px-1">我送出的邀請</p>
                     {data.outgoingProposals.map(p => (
-                      <ProposalCard key={p.id} proposal={p} incoming={false} onAction={handleProposal} processingId={processingId}
+                      <ProposalCard key={p.id} proposal={p} incoming={false} onAction={handleProposal} onWithdraw={handleWithdrawProposal} processingId={processingId}
                         myRequest={data.myRequests.find(r => r.id === p.from_request_id)}
                         alreadyExchanged={exchangedWith(p.to_branch_code, data.myRequests.find(r => r.id === p.from_request_id)?.trust_type, p.id)} />
                     ))}
@@ -749,10 +766,11 @@ function RequestCard({
   )
 }
 
-function ProposalCard({ proposal, incoming, onAction, processingId, myRequest, alreadyExchanged }: {
+function ProposalCard({ proposal, incoming, onAction, onWithdraw, processingId, myRequest, alreadyExchanged }: {
   proposal: MatchProposal
   incoming: boolean
   onAction: (id: string, action: 'confirm' | 'reject') => void
+  onWithdraw?: (id: string) => void
   processingId: string | null
   /** 我方被提案的那筆登記，用來取 customer_count */
   myRequest?: ExchangeRequest
@@ -762,6 +780,7 @@ function ProposalCard({ proposal, incoming, onAction, processingId, myRequest, a
   const other = incoming ? proposal.from_branch_name : proposal.to_branch_name
   const otherCode = incoming ? proposal.from_branch_code : proposal.to_branch_code
   const isProcessing = processingId === proposal.id
+  const waitingDays = Math.floor((Date.now() - Date.parse(proposal.created_at)) / 86400000)
 
   // 同一客戶在同一分行只能計一件，所以跟同一家分行累計交換的件數不該超過客戶數。
   // 客戶數是分行自填、系統無從查證，因此只提醒不阻擋。
@@ -794,9 +813,24 @@ function ProposalCard({ proposal, incoming, onAction, processingId, myRequest, a
             </button>
           </div>
         ) : (
-          <span className="text-xs text-blue-600 bg-blue-100 px-3 py-1.5 rounded-full shrink-0 font-semibold">等待確認</span>
+          <div className="shrink-0 text-right space-y-1.5">
+            <span className="block text-xs text-blue-600 bg-blue-100 px-3 py-1.5 rounded-full font-semibold">等待確認</span>
+            <button onClick={() => onWithdraw?.(proposal.id)}
+              disabled={!!processingId}
+              className="text-xs text-gray-400 hover:text-red-500 underline disabled:opacity-50">
+              撤回
+            </button>
+          </div>
         )}
       </div>
+
+      {/* 對方久未處理時，件數會一直被鎖住，主動提醒可以撤回 */}
+      {!incoming && waitingDays >= 7 && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-2.5 py-2 mt-2">
+          已等待 {waitingDays} 天。這段期間你的 {proposal.proposed_count} 件會一直被佔住，
+          可以撤回後改找其他分行。
+        </p>
+      )}
 
       {alreadyExchanged > 0 && (
         <p className="text-xs text-gray-500 mt-2 pt-2 border-t border-blue-100">

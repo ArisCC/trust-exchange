@@ -143,5 +143,27 @@ check('婉拒成功', (await api('/api/confirm', {
 check('婉拒後件數未被扣除', (await api(`/api/status/${r1.body.id}`)).body.remaining_count === 2)
 check('婉拒後 pending 釋出', (await api('/api/board')).body.find(r => r.id === r1.body.id).pending_count === 0)
 
+console.log('\n▎撤回自己送出的提案（提案一送出就佔住件數，沒有撤回就會被鎖死）')
+const w1 = await submit('908', 'H分行', 'general', 3, 3)
+const w2 = await submit('909', 'I分行', 'general', 3, 3)
+const wp = await api('/api/propose', {
+  method: 'POST', body: JSON.stringify({ from_request_id: w1.body.id, to_request_id: w2.body.id, proposed_count: 2 }),
+})
+check('提案後件數被佔住', (await api('/api/board')).body.find(r => r.id === w1.body.id).pending_count === 2)
+check('被提案方不能撤回（要用婉拒）', (await api(`/api/propose/${wp.body.id}`, {
+  method: 'DELETE', body: JSON.stringify({ branch_code: '909' }),
+})).status === 403)
+const wd = await api(`/api/propose/${wp.body.id}`, { method: 'DELETE', body: JSON.stringify({ branch_code: '908' }) })
+check('提案方可以撤回', wd.status === 200 && wd.body.released === 2)
+check('撤回後件數釋出', (await api('/api/board')).body.find(r => r.id === w1.body.id).pending_count === 0)
+check('撤回後對方的件數也釋出', (await api('/api/board')).body.find(r => r.id === w2.body.id).pending_count === 0)
+check('撤回後 remaining 未被扣除', (await api(`/api/status/${w1.body.id}`)).body.remaining_count === 3)
+check('已撤回的提案不能再撤回', (await api(`/api/propose/${wp.body.id}`, {
+  method: 'DELETE', body: JSON.stringify({ branch_code: '908' }),
+})).status === 404)
+check('撤回後可重新提案給同一家', (await api('/api/propose', {
+  method: 'POST', body: JSON.stringify({ from_request_id: w1.body.id, to_request_id: w2.body.id, proposed_count: 1 }),
+})).status === 200)
+
 console.log(`\n${'='.repeat(40)}\n通過 ${pass} 項，失敗 ${fail} 項\n${'='.repeat(40)}`)
 process.exit(fail > 0 ? 1 : 0)

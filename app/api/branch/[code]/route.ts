@@ -44,8 +44,17 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ code: stri
     )
     .all({ me: code }) as { branch_code: string; trust_type: string; count: number }[]
 
+  // 一併帶出被待確認提案佔住的件數：remaining_count 尚未扣掉這部分，
+  // 直接顯示會讓分行以為還有 N 件可提案，送出時卻被擋（實際可用更少）。
   const myRequests = db
-    .prepare('SELECT * FROM exchange_requests WHERE branch_code = ? ORDER BY created_at DESC')
+    .prepare(
+      `SELECT r.*,
+         (SELECT COALESCE(SUM(p.proposed_count), 0) FROM match_proposals p
+           WHERE (p.from_request_id = r.id OR p.to_request_id = r.id)
+             AND p.status = 'pending') AS pending_count
+       FROM exchange_requests r
+       WHERE r.branch_code = ? ORDER BY r.created_at DESC`
+    )
     .all(code) as ExchangeRequest[]
 
   if (myRequests.length === 0) return NextResponse.json({ ...EMPTY, contact, exchanged })

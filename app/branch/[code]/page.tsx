@@ -168,9 +168,14 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
     return Math.max(0, total - self)
   }
 
+  /** 這筆申請目前真正還能拿去提案的件數＝剩餘扣掉已被待確認提案佔住的部分 */
+  const availableOf = (r: ExchangeRequest) => r.remaining_count - (r.pending_count ?? 0)
+
   const totalRequested = activeRequests.reduce((s, r) => s + r.requested_count, 0)
   const totalMatched = activeRequests.reduce((s, r) => s + (r.requested_count - r.remaining_count), 0)
   const totalRemaining = activeRequests.reduce((s, r) => s + r.remaining_count, 0)
+  const totalPending = activeRequests.reduce((s, r) => s + (r.pending_count ?? 0), 0)
+  const totalAvailable = totalRemaining - totalPending
 
   // 兩套版面（手機／桌機）共用同一份內容，避免維護兩份
   const stepGuide = (
@@ -180,7 +185,7 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
           <div className="bg-white rounded-2xl shadow-sm border border-emerald-100 p-4 flex items-center justify-between gap-3">
             <div>
               <p className="text-emerald-700 font-bold text-sm">
-                已登記 {waitingRequests.reduce((s, r) => s + r.remaining_count, 0)} 件等待交換
+                可配對 {totalAvailable} 件{totalPending > 0 && `，另 ${totalPending} 件洽談中`}
               </p>
               <p className="text-emerald-600 text-xs mt-0.5">前往配對媒合，找其他分行配對</p>
             </div>
@@ -423,7 +428,7 @@ export default function BranchPage({ params }: { params: Promise<{ code: string 
                 {[
                   { n: totalRequested, label: '登記件數', c: 'text-white', bg: 'rgba(255,255,255,0.1)' },
                   { n: totalMatched, label: '已配對', c: 'text-emerald-300', bg: 'rgba(16,185,129,0.18)' },
-                  { n: totalRemaining, label: '待配對', c: 'text-amber-300', bg: 'rgba(245,158,11,0.18)' },
+                  { n: totalAvailable, label: '可配對', c: 'text-amber-300', bg: 'rgba(245,158,11,0.18)' },
                 ].map(x => (
                   <div key={x.label} className="rounded-2xl px-5 py-4 flex items-baseline gap-3" style={{ background: x.bg }}>
                     <span className={`text-4xl font-black tabular-nums ${x.c}`}>{x.n}</span>
@@ -663,8 +668,14 @@ function RequestCard({
       {/* 操作按鈕 */}
       {isWaiting && (
         <div className="px-4 pt-3 pb-4">
-          {matchedCount > 0 && (
-            <p className="text-xs font-semibold text-gray-500 mb-2">剩餘 {request.remaining_count} 件待配對</p>
+          {/* 有已配對或有洽談中都要顯示，否則分行看不出件數為何送不出去 */}
+          {(matchedCount > 0 || (request.pending_count ?? 0) > 0) && (
+            <p className="text-xs font-semibold text-gray-500 mb-2">
+              可配對 {request.remaining_count - (request.pending_count ?? 0)} 件
+              {(request.pending_count ?? 0) > 0 && (
+                <span className="text-amber-600 font-normal">・另 {request.pending_count} 件洽談中</span>
+              )}
+            </p>
           )}
           {!editing && (
             request.customer_count !== null ? (

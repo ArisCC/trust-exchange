@@ -54,9 +54,14 @@ function BoardContent() {
   function openPropose(req: ExchangeRequest) {
     setTarget(req)
     const targetType = req.trust_type ?? 'disability'
-    const best = myRequests.find(r => (r.trust_type ?? 'disability') === targetType)
+    // 選可用件數最多的那筆，而不是第一筆——第一筆可能整批都在洽談中，
+    // 自動選中它會讓使用者一開啟就處於必定失敗的狀態。
+    const best = myRequests
+      .filter(r => (r.trust_type ?? 'disability') === targetType)
+      .sort((a, b) => availableOf(b) - availableOf(a))[0]
     setSelectedMyReqId(best?.id ?? '')
-    setProposeCount(1)
+    const max = best ? Math.min(availableOf(req), availableOf(best)) : 0
+    setProposeCount(Math.max(1, Math.min(1, max)))
   }
 
   async function submitPropose() {
@@ -100,7 +105,7 @@ function BoardContent() {
     : myRequests
   const selectedMyReq = myMatchingRequests.find(r => r.id === selectedMyReqId)
   const maxCount = target && selectedMyReq
-    ? Math.min(availableOf(target), selectedMyReq.remaining_count)
+    ? Math.min(availableOf(target), availableOf(selectedMyReq))
     : 1
 
   return (
@@ -130,7 +135,7 @@ function BoardContent() {
                 <span className="text-sm font-medium">{myBranch.name}</span>
                 {myRequests.length > 0 && (
                   <span className="text-xs bg-blue-500 px-2 py-0.5 rounded-full font-bold">
-                    可配對 {myRequests.reduce((n, r) => n + r.remaining_count, 0)} 件
+                    可配對 {myRequests.reduce((n, r) => n + availableOf(r), 0)} 件
                   </span>
                 )}
               </Link>
@@ -182,7 +187,7 @@ function BoardContent() {
             <div className="grid grid-cols-2 xl:grid-cols-3 gap-4 items-start">
               {filtered.map(r => {
                 const branch = findBranch(r.branch_code)
-                const canPropose = myBranch && availableOf(r) > 0 && myRequests.some(q => (q.trust_type ?? 'disability') === (r.trust_type ?? 'disability'))
+                const canPropose = myBranch && availableOf(r) > 0 && myRequests.some(q => (q.trust_type ?? 'disability') === (r.trust_type ?? 'disability') && availableOf(q) > 0)
                 const matched = matchedBranchCounts.get(r.branch_code)
                 return (
                   <div key={r.id}
@@ -227,7 +232,9 @@ function BoardContent() {
                       ) : !myBranch ? (
                         <Link href="/" className="text-xs text-blue-600 hover:underline whitespace-nowrap">登入後配對</Link>
                       ) : availableOf(r) === 0 ? (
-                        <span className="text-xs text-slate-400 whitespace-nowrap">全部洽談中</span>
+                        <span className="text-xs text-slate-400 whitespace-nowrap">對方全部洽談中</span>
+                      ) : myRequests.some(q => (q.trust_type ?? 'disability') === (r.trust_type ?? 'disability')) ? (
+                        <span className="text-xs text-slate-400 whitespace-nowrap">你的件數洽談中</span>
                       ) : (
                         <Link href={`/branch/${myCode}`} className="text-xs text-amber-600 hover:underline whitespace-nowrap">先登記件數</Link>
                       )}
@@ -265,7 +272,7 @@ function BoardContent() {
             <span className="text-xs text-blue-300">以 <strong className="text-white">{myBranch.name}</strong> 身份瀏覽・可配對件數：</span>
             {myRequests.map(r => (
               <span key={r.id} className="text-xs bg-blue-500 text-white px-2.5 py-0.5 rounded-full font-bold">
-                {r.remaining_count} 件
+                {availableOf(r)} 件
               </span>
             ))}
           </div>
@@ -324,7 +331,7 @@ function BoardContent() {
         <div className="space-y-3">
         {filtered.map(r => {
           const branch = findBranch(r.branch_code)
-          const canPropose = myBranch && availableOf(r) > 0 && myRequests.some(req => (req.trust_type ?? 'disability') === (r.trust_type ?? 'disability'))
+          const canPropose = myBranch && availableOf(r) > 0 && myRequests.some(req => (req.trust_type ?? 'disability') === (r.trust_type ?? 'disability') && availableOf(req) > 0)
           return (
             <div key={r.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center justify-between gap-4 hover:shadow-md transition-shadow">
               <div className="flex-1 min-w-0">
@@ -414,9 +421,9 @@ function BoardContent() {
                         <input type="radio" name="myReq" value={r.id} checked={selectedMyReqId === r.id}
                           onChange={() => {
                             setSelectedMyReqId(r.id)
-                            setProposeCount(Math.min(availableOf(target), r.remaining_count))
+                            setProposeCount(Math.max(1, Math.min(availableOf(target), availableOf(r))))
                           }} className="accent-blue-600" />
-                        <span className="text-sm font-semibold text-gray-800">剩餘 {r.remaining_count} 件</span>
+                        <span className="text-sm font-semibold text-gray-800">可配對 {availableOf(r)} 件</span>
                         {r.contact_info && <span className="text-xs text-gray-400">{r.contact_info}</span>}
                       </label>
                     ))}
@@ -424,6 +431,14 @@ function BoardContent() {
                 </div>
               )}
 
+              {maxCount < 1 ? (
+                <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4">
+                  <p className="text-sm text-amber-800 font-bold">目前沒有可交換的件數</p>
+                  <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+                    你這個信託類型的件數已全部在洽談中，等對方確認或婉拒後才會釋出。
+                  </p>
+                </div>
+              ) : (
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-3">
                   交換件數
@@ -440,16 +455,17 @@ function BoardContent() {
                   onChange={e => setProposeCount(Number(e.target.value))}
                   className="w-full mt-4 accent-blue-600" />
               </div>
+              )}
 
               <div className="flex gap-3 pt-1">
                 <button onClick={() => setTarget(null)}
                   className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-3 rounded-2xl transition-colors">
                   取消
                 </button>
-                <button onClick={submitPropose} disabled={proposing || !selectedMyReqId}
+                <button onClick={submitPropose} disabled={proposing || !selectedMyReqId || maxCount < 1}
                   className="flex-1 text-white font-bold py-3 rounded-2xl transition-all disabled:opacity-50"
                   style={{ background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)' }}>
-                  {proposing ? '送出中…' : `送出 (${proposeCount} 件)`}
+                  {proposing ? '送出中…' : maxCount < 1 ? '無可用件數' : `送出 (${proposeCount} 件)`}
                 </button>
               </div>
             </div>
